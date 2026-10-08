@@ -4,6 +4,7 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -30,7 +31,8 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.ImageVector
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -236,9 +238,9 @@ fun HomeScreen(nav: Nav) {
                 showAdd = false
                 picker.launch(arrayOf("video/*", "audio/*", "application/x-matroska"))
             }
-            ChoiceRow(Icons.Default.MenuBook, "Manga / Comic", "Page translation (not available in this build)") {
+            ChoiceRow(Icons.Default.MenuBook, "Manga / Comic", "Detect text, translate pages and export") {
                 showAdd = false
-                Toast.makeText(ctx, "Manga translation is not implemented in this build yet.", Toast.LENGTH_LONG).show()
+                nav.push(Route.Manga)
             }
         }
     }
