@@ -1,0 +1,2 @@
+-keep class com.saridub.app.Native { *; }
+-keepclasseswithmembernames class * { native <methods>; }
