@@ -46,6 +46,7 @@ sealed class Route {
     object Settings : Route()
     data class Proj(val id: String) : Route()
     data class Player(val id: String?, val url: String?, val title: String) : Route()
+    object Manga : Route()
 }
 
 class Nav(val push: (Route) -> Unit, val back: () -> Unit)
@@ -79,6 +80,7 @@ fun Root() {
             Route.Settings -> SettingsScreen(nav)
             is Route.Proj -> ProjectScreen(r.id, nav)
             is Route.Player -> PlayerScreen(r, nav)
+            Route.Manga -> MangaScreen(nav)
         }
     }
 }
