@@ -42,7 +42,7 @@ import java.util.UUID
 
 sealed class Route {
     object Home : Route()
-    object Search : Route()
+    data class Find(val q: String) : Route()
     object Settings : Route()
     data class Proj(val id: String) : Route()
     data class Player(val id: String?, val url: String?, val title: String) : Route()
@@ -71,10 +71,11 @@ fun Root() {
     var stack by remember { mutableStateOf(listOf<Route>(Route.Home)) }
     val nav = Nav({ stack = stack + it }, { if (stack.size > 1) stack = stack.dropLast(1) })
     BackHandler(stack.size > 1) { nav.back() }
-    Box(Modifier.fillMaxSize().background(Bg).statusBarsPadding()) {
+    val onHome = stack.last() is Route.Home
+    Box(Modifier.fillMaxSize().background(if (onHome) NeuBase else Bg).then(if (onHome) Modifier else Modifier.statusBarsPadding())) {
         when (val r = stack.last()) {
             Route.Home -> HomeScreen(nav)
-            Route.Search -> SearchScreen(nav)
+            is Route.Find -> SearchScreen(nav, r.q)
             Route.Settings -> SettingsScreen(nav)
             is Route.Proj -> ProjectScreen(r.id, nav)
             is Route.Player -> PlayerScreen(r, nav)
@@ -111,61 +112,17 @@ suspend fun createProject(ctx: Context, uri: Uri, title: String): String? {
 }
 
 @Composable
-fun HomeScreen(nav: Nav) {
-    val ctx = LocalContext.current
-    val app = ctx.applicationContext as SariApp
-    val scope = rememberCoroutineScope()
-    var projects by remember { mutableStateOf(listOf<Project>()) }
-    var busy by remember { mutableStateOf(false) }
-    val progress by ProcessingState.progress.collectAsState()
-    LaunchedEffect(progress.running, progress.percent / 5) { projects = withContext(Dispatchers.IO) { app.store.list() } }
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) scope.launch {
-            busy = true
-            runCatching { ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-            val id = createProject(ctx, uri, MediaAnalyzer.displayName(ctx, uri).substringBeforeLast('.'))
-            busy = false
-            if (id != null) nav.push(Route.Proj(id))
-        }
-    }
-    Column(Modifier.fillMaxSize()) {
-        TopBar("SARI DUB", null) {
-            IconButton(onClick = { nav.push(Route.Search) }) { Icon(Icons.Default.Search, "Search", tint = Color.White) }
-            IconButton(onClick = { nav.push(Route.Settings) }) { Icon(Icons.Default.Settings, "Settings", tint = Color.White) }
-        }
-        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            GradientButton(if (busy) "Analysing media…" else "Import video", Modifier.fillMaxWidth(), enabled = !busy) {
-                picker.launch(arrayOf("video/*", "audio/*", "application/x-matroska"))
-            }
-            Text("Projects", fontWeight = FontWeight.SemiBold, color = Dim)
-        }
-        if (projects.isEmpty()) Text("No projects yet. Import a video or search legal sources.", color = Dim, modifier = Modifier.padding(16.dp))
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(projects, key = { it.id }) { p ->
-                val pct = if (p.chunkCount == 0) 0 else 100 * p.ready.size / p.chunkCount
-                SCard(Modifier.clickable { nav.push(Route.Proj(p.id)) }) {
-                    Text(p.title, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Text("${p.srcLang} → ${p.dstLang} · ${fmtTime(p.durationMs)} · ${p.mode}", color = Dim, fontSize = 13.sp)
-                    if (p.hasDub) {
-                        Spacer(Modifier.height(8.dp))
-                        LinearProgressIndicator(progress = { pct / 100f }, Modifier.fillMaxWidth(), color = Accent1)
-                        Text("Dub $pct% (${p.ready.size}/${p.chunkCount} chunks)", color = Dim, fontSize = 12.sp)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SearchScreen(nav: Nav) {
+fun SearchScreen(nav: Nav, initial: String = "") {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val hub = remember { SearchBridge.hub() }
-    var q by remember { mutableStateOf("") }
+    var q by remember { mutableStateOf(initial) }
     var out by remember { mutableStateOf<SearchHub.Outcome?>(null) }
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    LaunchedEffect(initial) {
+        if (initial.isNotBlank()) { loading = true; out = hub.search(initial); loading = false }
+    }
     Column(Modifier.fillMaxSize()) {
         TopBar("Search legal sources", nav)
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
