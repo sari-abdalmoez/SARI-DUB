@@ -44,6 +44,10 @@ fun MangaScreen(nav: Nav) {
     var status by remember { mutableStateOf("") }
     var current by remember { mutableStateOf(0) }
     var total by remember { mutableStateOf(0) }
+    var dialogueOnly by remember { mutableStateOf(true) }
+    var rtl by remember { mutableStateOf(true) }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val failures = remember { mutableStateListOf<String>() }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         pages = uris
@@ -68,7 +72,7 @@ fun MangaScreen(nav: Nav) {
         }
     }
 
-    DisposableEffect(Unit) { onDispose { } }
+    DisposableEffect(Unit) { onDispose { job?.cancel() } }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -89,26 +93,40 @@ fun MangaScreen(nav: Nav) {
                         }
                     }
                 }
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Speech bubbles only", Modifier.weight(1f)); Switch(dialogueOnly, { dialogueOnly = it }, enabled = !running)
+                }
+                Text(if (dialogueOnly) "Narration, sound effects and artwork text keep the original." else "All detected text is translated (may touch artwork).", color = Dim, fontSize = 11.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Right-to-left reading (manga)", Modifier.weight(1f)); Switch(rtl, { rtl = it }, enabled = !running)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 GradientButton("Select pages", Modifier.weight(1f), !running) { picker.launch(arrayOf("image/*")) }
-                GradientButton("Translate", Modifier.weight(1f), !running && pages.isNotEmpty()) {
-                    scope.launch {
-                        running = true; outputs = emptyList(); current = 0; total = pages.size; status = "Starting…"
+                GradientButton(if (running) "Cancel" else "Translate", Modifier.weight(1f), running || pages.isNotEmpty()) {
+                    if (running) { job?.cancel(); return@GradientButton }
+                    job = scope.launch {
+                        running = true; outputs = emptyList(); failures.clear(); current = 0; total = pages.size; status = "Starting…"
                         val outList = ArrayList<File>()
-                        runCatching {
+                        val runDir = withContext(Dispatchers.IO) { File(ctx.filesDir, "manga/${UUID.randomUUID()}").also { it.mkdirs() } }
+                        try {
                             for ((i, uri) in pages.withIndex()) {
                                 coroutineContext.ensureActive()
                                 current = i + 1
                                 status = "Processing page ${i + 1}/${pages.size}"
-                                val out = withContext(Dispatchers.IO) { File(ctx.filesDir, "manga/${UUID.randomUUID()}/page_${i + 1}.png") }
-                                val result = MangaProcessor.process(ctx, uri, target, out)
-                                outList += result.output
+                                try {
+                                    val result = MangaProcessor.process(ctx, uri, target, File(runDir, "page_${i + 1}.png"), dialogueOnly, rtl)
+                                    outList += result.output; outputs = outList.toList()      // incremental: finished pages stay visible
+                                    if (result.skipped > 0 || result.failed > 0)
+                                        failures.add("Page ${i + 1}: ${result.blocks} translated, ${result.skipped} left as original, ${result.failed} failed")
+                                } catch (e: kotlinx.coroutines.CancellationException) { throw e
+                                } catch (e: Exception) { failures.add("Page ${i + 1} skipped: ${e.message ?: e.javaClass.simpleName}") }
                             }
-                        }.onSuccess { status = "Completed ${outList.size}/${pages.size} page(s)" }
-                         .onFailure { status = "Failed: ${it.message}" }
-                        outputs = outList
-                        running = false
+                            status = "Completed ${outList.size}/${pages.size} page(s)"
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            status = "Cancelled. ${outList.size} page(s) finished."
+                        } finally { outputs = outList.toList(); running = false }
                     }
                 }
             }
@@ -117,6 +135,7 @@ fun MangaScreen(nav: Nav) {
                 Text("Page $current / $total", color = Dim, fontSize = 12.sp)
             }
             if (status.isNotBlank()) Text(status, color = Accent2, fontSize = 12.sp)
+            failures.forEach { Text(it, color = Dim, fontSize = 11.sp) }
             if (outputs.isNotEmpty()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     GradientButton("Export all", Modifier.weight(1f)) { folderPicker.launch(null) }

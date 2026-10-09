@@ -91,8 +91,15 @@ fun SetupTab(p: Project, running: Boolean, onChange: () -> Unit, save: () -> Uni
     var duck by remember(p.id) { mutableStateOf(p.duck) }
     val srtPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
-            val items = withContext(Dispatchers.IO) { Srt.parse(ctx.contentResolver.openInputStream(uri)!!.bufferedReader().use { it.readText() }) }
-            if (items.isEmpty()) { msg = "No subtitle entries found in that file"; return@launch }
+            val items = try {
+                withContext(Dispatchers.IO) {
+                    val size = MediaAnalyzer.sizeOf(ctx, uri)
+                    if (size > 8L * 1024 * 1024) throw java.io.IOException("File is too large for a subtitle file (${size / 1024} KB)")
+                    val bytes = (ctx.contentResolver.openInputStream(uri) ?: throw java.io.IOException("Cannot open the selected file")).use { it.readBytes() }
+                    Srt.parse(Srt.decode(bytes))     // handles UTF-8/BOM, falls back to Windows-1252; reads SRT and WebVTT
+                }
+            } catch (e: Exception) { msg = "Could not read the subtitle file: ${e.message ?: "unknown error"}"; return@launch }
+            if (items.isEmpty()) { msg = "No valid subtitle cues found (expected .srt or .vtt with timestamps)"; return@launch }
             p.segments.clear()
             items.forEachIndexed { i, (a, b, t) -> p.segments.add(Segment(i, a, b, a, b, 0, t)) }
             p.analysisDone = false; p.translateDone = false; p.ready.clear(); p.failed.clear(); p.speakers.clear()
@@ -105,7 +112,7 @@ fun SetupTab(p: Project, running: Boolean, onChange: () -> Unit, save: () -> Uni
             Text("Source dialogue", fontWeight = FontWeight.Bold)
             Text("${p.segments.size} lines loaded. This build has no bundled speech-recognition model, so the original-language .srt is the text source; VAD, voice analysis and diarisation run on the real audio.", color = Dim, fontSize = 12.sp)
             Spacer(Modifier.height(8.dp))
-            GradientButton("Import source .srt", Modifier.fillMaxWidth(), enabled = !running) { srtPicker.launch(arrayOf("*/*")) }
+            GradientButton("Import source .srt / .vtt", Modifier.fillMaxWidth(), enabled = !running) { srtPicker.launch(arrayOf("*/*")) }
             if (msg.isNotBlank()) Text(msg, color = Accent2, fontSize = 12.sp)
         }
         SCard {
@@ -247,23 +254,34 @@ fun ExportTab(p: Project, store: ProjectStore) {
         scope.launch {
             msg = try {
                 withContext(Dispatchers.IO) {
-                    ctx.contentResolver.openOutputStream(uri)!!.use { o ->
-                        when (pending) {
-                            "srt_o" -> o.write(Exporter.srt(p, false).toByteArray())
-                            "srt_t" -> o.write(Exporter.srt(p, true).toByteArray())
-                            "wav" -> Exporter.concatDub(store, p, o)
-                            "json" -> o.write(p.toJson().toString(2).toByteArray())
+                    val isSrt = pending == "srt_o" || pending == "srt_t"
+                    val text = if (isSrt) Exporter.srt(p, pending == "srt_t") else ""
+                    if (isSrt) Srt.validate(text, p.segments.size)?.let { throw java.io.IOException(it) }   // check before writing
+                    try {
+                        (ctx.contentResolver.openOutputStream(uri) ?: throw java.io.IOException("Cannot write to the chosen location")).use { o ->
+                            when (pending) {
+                                "srt_o", "srt_t" -> o.write(text.toByteArray(Charsets.UTF_8))
+                                "wav" -> Exporter.concatDub(store, p, o)
+                                "json" -> o.write(p.toJson().toString(2).toByteArray(Charsets.UTF_8))
+                            }
                         }
+                        if (isSrt) {   // reopen and validate what was actually saved
+                            val back = (ctx.contentResolver.openInputStream(uri) ?: throw java.io.IOException("Saved file cannot be re-opened")).use { it.readBytes() }
+                            Srt.validate(Srt.decode(back), p.segments.size)?.let { throw java.io.IOException("Saved file failed validation: $it") }
+                        }
+                    } catch (e: Exception) {
+                        runCatching { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, uri) }   // no misleading partial file
+                        throw e
                     }
                 }
-                "Exported."
+                if (pending == "srt_t" && !p.translateDone) "Exported and verified. Untranslated lines were written in the original language." else "Exported and verified."
             } catch (e: Exception) { "Export failed: ${e.message}" }
         }
     }
     fun go(kind: String, name: String) { pending = kind; launcher.launch(name) }
     val base = p.title.replace(Regex("[^A-Za-z0-9_-]"), "_")
     Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        GradientButton("Translated subtitles (.srt)", Modifier.fillMaxWidth(), p.translateDone) { go("srt_t", "$base.${p.dstLang}.srt") }
+        GradientButton("Translated subtitles (.srt)", Modifier.fillMaxWidth(), p.segments.any { it.translated.isNotBlank() }) { go("srt_t", "$base.${p.dstLang}.srt") }
         GradientButton("Original subtitles (.srt)", Modifier.fillMaxWidth(), p.segments.isNotEmpty()) { go("srt_o", "$base.${p.srcLang}.srt") }
         GradientButton("Dubbed audio (.wav, 24 kHz mono)", Modifier.fillMaxWidth(), p.hasDub && p.chunkCount > 0 && p.ready.size == p.chunkCount) { go("wav", "$base.dub.wav") }
         GradientButton("Project data (.json)", Modifier.fillMaxWidth()) { go("json", "$base.project.json") }

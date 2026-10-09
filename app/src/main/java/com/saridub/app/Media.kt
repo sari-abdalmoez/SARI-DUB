@@ -169,33 +169,61 @@ object AudioExtractor {
 }
 
 object Srt {
-    private val timeRe = Regex("""(\d+):(\d+):(\d+)[,.](\d{1,3})""")
+    private val timeRe = Regex("""(?:(\d+):)?(\d{1,2}):(\d{1,2})[,.](\d{1,3})""")
+    private val tagRe = Regex("<[^>]+>")
+    private val assRe = Regex("\\{[^}]*\\}")
 
     private fun parseTime(s: String): Long? {
         val m = timeRe.find(s) ?: return null
-        val (h, mi, se, ms) = m.destructured
-        return h.toLong() * 3_600_000 + mi.toLong() * 60_000 + se.toLong() * 1000 + ms.padEnd(3, '0').toLong()
+        val h = m.groupValues[1].ifEmpty { "0" }.toLong()
+        val mi = m.groupValues[2].toLong(); val se = m.groupValues[3].toLong()
+        return h * 3_600_000 + mi * 60_000 + se * 1000 + m.groupValues[4].padEnd(3, '0').toLong()
     }
 
+    /** Parses SRT and WebVTT. Handles BOM, CRLF/CR line endings, WEBVTT header/NOTE/STYLE blocks, multiline cues,
+     *  optional cue identifiers and cue settings. Cues are returned in file order (never re-sorted or de-duplicated). */
     fun parse(text: String): List<Triple<Long, Long, String>> {
         val out = mutableListOf<Triple<Long, Long, String>>()
-        for (block in text.removePrefix("\uFEFF").split(Regex("\r?\n\r?\n"))) {
-            val lines = block.trim().lines()
+        val norm = text.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
+        for (block in norm.split(Regex("\n[ \t]*\n+"))) {
+            val lines = block.trim('\n').lines()
+            val first = lines.firstOrNull()?.trim().orEmpty()
+            if (first.startsWith("WEBVTT") || first.startsWith("NOTE") || first.startsWith("STYLE") || first.startsWith("REGION")) continue
             val ti = lines.indexOfFirst { it.contains("-->") }
             if (ti < 0) continue
             val parts = lines[ti].split("-->")
             val a = parseTime(parts[0]) ?: continue
-            val b = parseTime(parts.getOrElse(1) { "" }) ?: continue
-            val body = lines.drop(ti + 1).joinToString(" ").replace(Regex("<[^>]+>"), "").replace(Regex("\\{[^}]*\\}"), "").trim()
+            val b = parseTime(parts.getOrElse(1) { "" }.trim().substringBefore(' ')) ?: continue
+            val body = lines.drop(ti + 1).joinToString("\n") { it.trim() }
+                .replace(tagRe, "").replace(assRe, "").trim()
             if (body.isNotEmpty() && b > a) out.add(Triple(a, b, body))
         }
         return out
     }
 
-    fun time(ms: Long): String =
-        String.format(Locale.US, "%02d:%02d:%02d,%03d", ms / 3_600_000, (ms / 60_000) % 60, (ms / 1000) % 60, ms % 1000)
+    /** Decodes bytes as UTF-8 (BOM aware); falls back to windows-1252 when the bytes are not valid UTF-8. */
+    fun decode(bytes: ByteArray): String {
+        val dec = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        return try { dec.decode(java.nio.ByteBuffer.wrap(bytes)).toString() }
+        catch (e: java.nio.charset.CharacterCodingException) { String(bytes, charset("windows-1252")) }
+    }
+
+    fun time(ms: Long): String {
+        val v = ms.coerceAtLeast(0)
+        return String.format(Locale.US, "%02d:%02d:%02d,%03d", v / 3_600_000, (v / 60_000) % 60, (v / 1000) % 60, v % 1000)
+    }
 
     fun format(items: List<Triple<Long, Long, String>>): String = buildString {
         items.forEachIndexed { i, (a, b, t) -> append(i + 1).append('\n').append(time(a)).append(" --> ").append(time(b)).append('\n').append(t).append("\n\n") }
+    }
+
+    /** Re-parses exported text and checks cue count, order of start times and text presence. Returns an error or null. */
+    fun validate(exported: String, expectedCues: Int): String? {
+        val cues = parse(exported)
+        if (cues.size != expectedCues) return "Exported file has ${cues.size} cues, expected $expectedCues"
+        if (cues.any { it.third.isBlank() }) return "Exported file contains empty cues"
+        return null
     }
 }

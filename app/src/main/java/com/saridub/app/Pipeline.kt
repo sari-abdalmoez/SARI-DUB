@@ -116,11 +116,15 @@ class Pipeline(private val ctx: Context) {
         }
 
         // 3. Translation
-        if (!p.translateDone) { translate(p); p.translateDone = true; store.save(p) }
+        if (!p.translateDone) {
+            val failedLines = translate(p)
+            p.translateDone = failedLines == 0; store.save(p)
+            if (failedLines > 0) p.addLog("$failedLines line(s) untranslated; original text kept. Press Start to retry only those lines.")
+        }
 
         // 4. Dubbing per chunk
         if (p.hasDub) dub(p, pcm, dir)
-        emit(p, "Done", p.chunkCount, 100, msg = if (p.hasDub) "All chunks ready" else "Subtitles translated")
+        emit(p, "Done", p.chunkCount, 100, msg = if (!p.translateDone) "Finished with untranslated lines (see log); press Start to retry them" else if (p.hasDub) "All chunks ready" else "Subtitles translated")
     }
 
     private suspend fun analyze(p: Project, pcm: File, vad: List<Pair<Double, Double>>) {
@@ -159,27 +163,47 @@ class Pipeline(private val ctx: Context) {
         p.addLog("Detected ${p.speakers.size} speaker(s) by pitch clustering")
     }
 
-    private suspend fun translate(p: Project) {
-        if (p.srcLang == p.dstLang) { p.segments.forEach { it.translated = it.original }; return }
+    /** Returns the number of segments that could not be translated (their original text is kept, translated stays blank). */
+    private suspend fun translate(p: Project): Int {
+        if (p.srcLang == p.dstLang) { p.segments.forEach { it.translated = it.original }; return 0 }
         if (!TranslationModels.valid(p.srcLang) || !TranslationModels.valid(p.dstLang))
             throw PipelineError("LANG", "Unsupported language pair ${p.srcLang} -> ${p.dstLang}")
         for (l in listOf(p.srcLang, p.dstLang))
             if (!TranslationModels.isDownloaded(l))
                 throw PipelineError("MISSING_MODEL", "Translation model '$l' is not installed. Open Settings > Models and download it (one-time, explicit).")
         val tr = SegTranslator(p.srcLang, p.dstLang)
+        var failed = 0
         try {
-            p.segments.forEachIndexed { i, s ->
-                gate(p, "Translating", 30 + 15 * i / p.segments.size)
-                emit(p, "Translating", 0, 30 + 15 * i / p.segments.size)
-                if (s.translated.isBlank()) {
-                    val key = s.original.lowercase(Locale.ROOT).trim()
-                    var t = p.tm[key] ?: tr.translate(s.original)
-                    p.glossary.forEach { (src, dst) -> t = t.replace(src, dst, ignoreCase = true) }
-                    p.tm[key] = t; s.translated = t
-                }
-                if (i % 15 == 0) store.save(p)
+            // Segments that need no translation (numbers, symbols) are copied; cached ones are reused; the rest are batched with context.
+            val todo = ArrayList<Pair<Int, String>>()
+            for (s in p.segments) {
+                if (s.translated.isNotBlank()) continue
+                if (!TextUtil.needsTranslation(s.original)) { s.translated = s.original; continue }
+                val cached = p.tm[TextUtil.tmKey(p.srcLang, p.dstLang, s.original)]
+                if (cached != null) s.translated = TextUtil.rewrap(s.original, cached) else todo.add(s.id to s.original)
             }
+            val byId = p.segments.associateBy { it.id }
+            val renditions = HashMap<String, String?>()
+            val results = ContextBatcher.run(todo, { tr.translate(it) }) { done, total, batchRes ->
+                gate(p, "Translating", 30 + 15 * done / max(1, total))
+                emit(p, "Translating", 0, 30 + 15 * done / max(1, total), msg = "$done/$total lines")
+                for (r in batchRes) when (r) {
+                    is SegResult.Ok -> {
+                        val seg = byId[r.id] ?: continue
+                        val t = TextUtil.applyGlossary(r.original, r.text, p.glossary) { term ->
+                            renditions.getOrPut(term) { try { tr.translate(term) } catch (e: CancellationException) { throw e } catch (e: Exception) { null } }
+                        }
+                        seg.translated = t
+                        p.tm[TextUtil.tmKey(p.srcLang, p.dstLang, r.original)] = r.text
+                        while (p.tm.size > 5000) p.tm.remove(p.tm.keys.first())
+                    }
+                    is SegResult.Failed -> { failed++; p.addLog("Line ${r.id} not translated: ${r.reason}") }
+                }
+                store.save(p)
+            }
+            if (results.size != todo.size) throw PipelineError("TRANSLATE", "Translation returned ${results.size} results for ${todo.size} lines")
         } finally { tr.close() }
+        return failed
     }
 
     private suspend fun dub(p: Project, pcm: File, dir: File) {

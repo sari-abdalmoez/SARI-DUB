@@ -122,22 +122,36 @@ fun SearchScreen(nav: Nav, initial: String = "") {
     var out by remember { mutableStateOf<SearchHub.Outcome?>(null) }
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
-    LaunchedEffect(initial) {
-        if (initial.isNotBlank()) { loading = true; out = hub.search(initial); loading = false }
+    var searchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val episodes = remember { mutableStateMapOf<String, List<Episode>>() }
+
+    // A newer search cancels the previous one so stale results can never replace fresh ones.
+    fun runSearch(text: String, page: Int = 1) {
+        searchJob?.cancel()
+        searchJob = scope.launch {
+            loading = true; status = ""
+            try {
+                val res = hub.search(text, page)
+                out = if (page > 1 && out != null) res.copy(titles = (out!!.titles + res.titles).distinctBy { it.key }) else res
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e
+            } catch (e: Exception) { status = "Search failed: ${e.message ?: "unknown error"}"
+            } finally { loading = false }
+        }
     }
+    LaunchedEffect(initial) { if (initial.isNotBlank()) runSearch(initial) }
+    DisposableEffect(Unit) { onDispose { searchJob?.cancel() } }
+
     Column(Modifier.fillMaxSize()) {
         TopBar("Search legal sources", nav)
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Title or direct URL") })
-            GradientButton(if (loading) "Searching…" else "Search", Modifier.fillMaxWidth(), enabled = !loading && q.isNotBlank()) {
-                scope.launch { loading = true; out = hub.search(q); loading = false }
-            }
-            Text("Searches public-domain/authorised sources only (Internet Archive) plus URLs you provide. Nothing from your device is uploaded.", color = Dim, fontSize = 12.sp)
+            GradientButton(if (loading) "Searching…" else "Search", Modifier.fillMaxWidth(), enabled = !loading && q.isNotBlank()) { runSearch(q) }
+            Text("Searches public-domain/authorised sources only (Internet Archive). Movies must run longer than $MIN_MOVIE_MINUTES minutes and have a verified playable file; series episodes are exempt. Nothing from your device is uploaded.", color = Dim, fontSize = 12.sp)
             out?.errors?.forEach { Text(it, color = Bad, fontSize = 12.sp) }
             if (status.isNotBlank()) Text(status, color = Accent2, fontSize = 13.sp)
         }
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (out != null && out!!.titles.isEmpty() && !loading) item { Text("No results. Try another spelling or add a year.", color = Dim) }
+            if (out != null && out!!.titles.isEmpty() && !loading) item { Text("No full-length playable results. Try another spelling or add a year.", color = Dim) }
             items(out?.titles ?: emptyList(), key = { it.key }) { r ->
                 SCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -150,19 +164,33 @@ fun SearchScreen(nav: Nav, initial: String = "") {
                                 r.kind.lowercase().replaceFirstChar { it.uppercase() },
                                 r.rating.takeIf { it > 0f }?.let { "★ %.1f".format(it) }
                             ).joinToString(" · "), color = Dim, fontSize = 12.sp)
-                            Text(r.source, color = Accent2, fontSize = 12.sp)
+                            if (r.overview.isNotBlank()) Text(r.overview, color = Dim, fontSize = 11.sp, maxLines = 2)
+                            Text(r.source + if (r.playable) " · playable file verified" else " · catalog entry only", color = Accent2, fontSize = 12.sp)
                         }
                     }
                     Spacer(Modifier.height(10.dp))
-                    GradientButton("Open", Modifier.fillMaxWidth()) {
-                        status = "Searching for a playable source…"
+                    val eps = episodes[r.key]
+                    if (eps != null) {
+                        Text("Episodes (${eps.size})", color = Dim, fontSize = 12.sp)
+                        eps.forEach { e ->
+                            GradientButton("${Episodes.label(e)}  ${e.title.take(40)}", Modifier.fillMaxWidth()) { nav.push(Route.Player(null, e.url, "${r.title} ${Episodes.label(e)}")) }
+                            Spacer(Modifier.height(6.dp))
+                        }
+                    } else GradientButton("Open", Modifier.fillMaxWidth()) {
+                        status = "Checking playable source…"
                         scope.launch {
-                            val u = runCatching { ArchiveProvider().resolveFile(r.key.removePrefix("ia:")) }.getOrNull()
-                            status = if (u == null) "No playable file found for this title" else ""
-                            if (u != null) nav.push(Route.Player(null, u, r.title))
+                            val res = try { ArchiveProvider().resolve(r.key.removePrefix("ia:")) }
+                            catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                            catch (e: Exception) { status = "Could not reach the source: ${e.message ?: "network error"}"; return@launch }
+                            if (res == null) { status = "No playable video file was found for this title." }
+                            else if (res.episodes.size >= 2) { episodes[r.key] = res.episodes; status = "" }
+                            else { status = ""; nav.push(Route.Player(null, res.url, r.title)) }
                         }
                     }
                 }
+            }
+            if (out != null && out!!.titles.isNotEmpty() && !loading) item {
+                GradientButton("Load more", Modifier.fillMaxWidth()) { runSearch(q, (out?.page ?: 1) + 1) }
             }
         }
     }
