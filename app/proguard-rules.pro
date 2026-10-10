@@ -1,2 +1,1 @@
--keep class com.saridub.app.Native { *; }
--keepclasseswithmembernames class * { native <methods>; }
+-keep class com.saridub.app.** { *; }
