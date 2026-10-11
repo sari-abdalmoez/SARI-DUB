@@ -1,13 +1,16 @@
-plugins {
+import java.util.Properties\n\nplugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 // Secrets come from local.properties (git-ignored) or environment variables. Never from source.
-val localProps = java.util.Properties().apply {
-    val f = rootProject.file("local.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
+val localProps = Properties()
+val localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.inputStream().use { stream ->
+        localProps.load(stream)
+    }
 }
 fun secret(name: String): String =
     "\"" + (localProps.getProperty(name) ?: System.getenv(name) ?: "") + "\""
