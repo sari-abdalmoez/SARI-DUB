@@ -5,7 +5,9 @@ plugins {
 }
 
 // Secrets are read from local.properties (git-ignored) or environment variables.
-val localProps = java.util.Properties().apply {
+import java.util.Properties
+
+val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
