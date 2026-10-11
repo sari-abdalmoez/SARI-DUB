@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -31,8 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // Light neumorphic palette from the supplied home design.
-private val LightBg = Color(0xFFE8ECF2)
-private val LightShade = Color(0xFFB7C1D0)
+private val LightBg = Color(0xFFF0F2F5)
+private val LightShade = Color(0xFFD1D9E6)
 private val BrandOrange = Color(0xFFFF6B00)
 private val InkDark = Color(0xFF2D3748)
 private val Muted = Color(0xFF8A94A6)
@@ -40,9 +41,10 @@ private val Muted = Color(0xFF8A94A6)
 @Composable
 private fun LightCircle(icon: ImageVector, desc: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(52.dp)
-            .shadow(8.dp, CircleShape, ambientColor = LightShade, spotColor = LightShade)
-            .clip(CircleShape).background(LightBg).clickable(onClick = onClick),
+        Modifier.size(48.dp)
+            .shadow(8.dp, CircleShape, ambientColor = LightShade, spotColor = Color.White)
+            .clip(CircleShape).background(LightBg)
+            .border(1.dp, Color.White.copy(alpha = 0.65f), CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) { Icon(icon, desc, tint = InkDark, modifier = Modifier.size(22.dp)) }
 }
@@ -77,11 +79,14 @@ fun HomeScreen(
             LightCircle(Icons.Filled.Settings, "Settings", onSettings)
         }
         Spacer(Modifier.height(18.dp))
-        Text("SARI DUB", color = BrandOrange, fontWeight = FontWeight.Black, fontSize = 28.sp)
+        Text("SARI DUB", color = BrandOrange, fontWeight = FontWeight.Black, fontSize = 24.sp, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(22.dp))
 
         Row(
-            Modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(28.dp)).background(LightBg)
+            Modifier.fillMaxWidth().height(56.dp)
+                .shadow(6.dp, RoundedCornerShape(28.dp), ambientColor = LightShade, spotColor = Color.White)
+                .clip(RoundedCornerShape(28.dp)).background(LightBg)
+                .border(1.dp, Color.White.copy(alpha = 0.55f), RoundedCornerShape(28.dp))
                 .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -100,13 +105,13 @@ fun HomeScreen(
                     }
                 }
             )
-            Icon(Icons.Filled.Search, null, tint = Muted, modifier = Modifier.size(22.dp))
+            Icon(Icons.Filled.Search, "Search", tint = Muted, modifier = Modifier.size(22.dp).clickable { if (query.isNotBlank()) onSearch(query.trim()) })
         }
 
         Spacer(Modifier.weight(1f))
         Box(
-            Modifier.size(170.dp)
-                .shadow(14.dp, CircleShape, ambientColor = LightShade, spotColor = LightShade)
+            Modifier.size(160.dp)
+                .shadow(14.dp, CircleShape, ambientColor = LightShade, spotColor = Color.White)
                 .clip(CircleShape).background(LightBg)
                 .clickable { showSheet = true },
             contentAlignment = Alignment.Center

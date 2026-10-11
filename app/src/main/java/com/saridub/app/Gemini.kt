@@ -27,16 +27,27 @@ object Gemini {
             .put("generationConfig", gen)
             .toString()
 
-        var (code, resp) = Net.post(endpoint(), body, mapOf("x-goog-api-key" to Config.GEMINI_KEY))
-        if (code == 401 || code == 403) {
-            val retry = Net.post(endpoint(), body, mapOf("Authorization" to "Bearer ${Config.GEMINI_KEY}"))
-            code = retry.first
-            resp = retry.second
+        val (code, resp) = Net.post(endpoint(), body, mapOf("x-goog-api-key" to Config.GEMINI_KEY))
+        if (code !in 200..299) {
+            val providerMessage = runCatching {
+                JSONObject(resp).optJSONObject("error")?.optString("message")
+            }.getOrNull()?.takeIf { !it.isNullOrBlank() && it != "null" }
+            val detail = providerMessage ?: "Request rejected by Gemini; check key permissions, model access, quota and API enablement."
+            throw ApiException(Net.kindFor(code), "Gemini HTTP $code: ${detail.take(220)}", code)
         }
-        if (code !in 200..299) throw ApiException(Net.kindFor(code), "Gemini HTTP $code: ${resp.take(160)}", code)
 
-        JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
-            .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")
+        val root = JSONObject(resp)
+        val candidate = root.optJSONArray("candidates")?.optJSONObject(0)
+        val responseParts = candidate?.optJSONObject("content")?.optJSONArray("parts")
+        val answer = if (responseParts == null) "" else
+            (0 until responseParts.length()).mapNotNull { i ->
+                responseParts.optJSONObject(i)?.optString("text")?.takeIf { !it.isNullOrBlank() && it != "null" }
+            }.joinToString("\n").trim()
+        if (answer.isBlank()) {
+            val reason = candidate?.optString("finishReason")?.takeIf { !it.isNullOrBlank() } ?: "no text returned"
+            throw ApiException(ErrKind.MALFORMED, "Gemini returned no text ($reason)", code)
+        }
+        answer
     }
 
     private fun cleanJson(s: String): String =
@@ -55,15 +66,16 @@ object Gemini {
      */
     suspend fun analyzeVideo(mp4: ByteArray, target: String): List<SpeechCue> {
         val prompt = """
-            This is a short clip from a movie with its original audio. Transcribe every spoken line.
-            Ignore music, sound effects and background noise: do not output them.
+            This is audio extracted from a movie or video. Transcribe each audible spoken dialogue line.
+            Do not transcribe music or sound effects. Infer speaker identity, perceived voice gender and emotion from the audio only.
+            Translate each spoken line naturally into $target. Keep the original order and accurate timing.
             Return ONLY a JSON array. Each item:
-            {"start":seconds,"end":seconds,"speaker":"S1","gender":"male or female","emotion":"neutral|happy|sad|angry|shouting|whisper|calm|fear","text":"natural $target dialogue"}
-            Use the same speaker id for the same character across lines. start and end are seconds from the start of this clip.
+            {"start":seconds,"end":seconds,"speaker":"S1","gender":"male or female","emotion":"neutral|happy|sad|angry|shouting|whisper|calm|fear","text":"translated dialogue"}
+            Use the same speaker id when the same voice returns. start and end are seconds from the beginning of this audio segment.
         """.trimIndent()
         val parts = JSONArray()
             .put(JSONObject().put("inline_data", JSONObject()
-                .put("mime_type", "video/mp4")
+                .put("mime_type", "audio/mp4")
                 .put("data", Base64.encodeToString(mp4, Base64.NO_WRAP))))
             .put(JSONObject().put("text", prompt))
         val arr = JSONArray(cleanJson(generate(parts, json = true)))

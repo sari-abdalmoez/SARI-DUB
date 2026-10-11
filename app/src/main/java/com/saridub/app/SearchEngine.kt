@@ -15,16 +15,21 @@ import java.util.concurrent.ConcurrentHashMap
 object SearchEngine {
     data class Scored(val title: Title, val score: Double)
 
-    private val providers: List<TitleProvider> = listOf(TmdbProvider(), TvMazeProvider(), TraktProvider())
+    private val providers: List<TitleProvider> = listOf(TmdbProvider(), TraktProvider(), TvMazeProvider(), CinemetaProvider())
     private val cache = ConcurrentHashMap<String, Pair<Long, List<Scored>>>()
     private val seenTitles = ConcurrentHashMap<String, Title>()
-    private val providerStatus = ConcurrentHashMap<String, ErrKind>()
+    private val providerStatus = ConcurrentHashMap<String, Pair<ErrKind, String>>()
     private const val TTL_MS = 10 * 60_000L
-    private const val PROVIDER_TIMEOUT_MS = 6_000L
+    private const val PROVIDER_TIMEOUT_MS = 16_000L
 
     suspend fun search(raw: String, onPartial: (List<Scored>) -> Unit = {}): List<Scored> = coroutineScope {
         val q = raw.trim()
-        if (q.isEmpty()) return@coroutineScope emptyList()
+        if (q.isEmpty()) {
+            providerStatus.clear()
+            return@coroutineScope emptyList()
+        }
+        // Clear previous-query errors so the UI never reports stale failures.
+        providerStatus.clear()
 
         val key = Text.normalize(q)
         cache[key]?.takeIf { System.currentTimeMillis() - it.first < TTL_MS }?.let {
@@ -36,6 +41,7 @@ object SearchEngine {
         providers.map { p ->
             async {
                 var kind = ErrKind.OK
+                var detail = ""
                 val res: List<Title> = try {
                     withTimeoutOrNull(PROVIDER_TIMEOUT_MS) { p.search(q) }
                         ?: run { kind = ErrKind.TIMEOUT; emptyList<Title>() }
@@ -43,12 +49,14 @@ object SearchEngine {
                     throw e
                 } catch (e: ApiException) {
                     kind = e.kind
+                    detail = e.message.orEmpty().take(180)
                     emptyList<Title>()
                 } catch (e: Exception) {
                     kind = ErrKind.MALFORMED
+                    detail = e.message.orEmpty().take(180)
                     emptyList<Title>()
                 }
-                providerStatus[p.name] = kind
+                providerStatus[p.name] = kind to detail
                 collected.addAll(res)
                 onPartial(rank(q, collected.toList()))
             }
@@ -61,8 +69,12 @@ object SearchEngine {
 
     /** Human-readable list of providers that failed in the last search. Empty when everything worked. */
     fun statusLine(): String = providerStatus.entries
-        .filter { it.value != ErrKind.OK }
-        .joinToString(" • ") { "${it.key}: ${Net.describeKind(it.value)}" }
+        .filter { it.value.first != ErrKind.OK }
+        .sortedBy { it.key }
+        .joinToString(" • ") { entry ->
+            val detail = entry.value.second.takeIf { it.isNotBlank() }
+            "${entry.key}: ${Net.describeKind(entry.value.first)}" + if (detail == null) "" else " ($detail)"
+        }
 
     /** Instant autocomplete from titles seen in recent searches. */
     fun suggest(q: String, limit: Int = 6): List<Title> {

@@ -11,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -62,8 +64,11 @@ fun MangaScreen(initial: List<Uri>, onBack: () -> Unit) {
     var job by remember { mutableStateOf<Job?>(null) }
     var progress by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
+    var targetLanguage by remember { mutableStateOf(AppSettings.targetLanguage) }
+    var selectedUris by remember { mutableStateOf(initial) }
 
     fun process(uris: List<Uri>) {
+        selectedUris = uris
         job?.cancel()
         pages.clear()
         notice = ""
@@ -73,7 +78,7 @@ fun MangaScreen(initial: List<Uri>, onBack: () -> Unit) {
                 val name = "page_${i + 1}"
                 try {
                     val src = withContext(Dispatchers.IO) { loadBitmap(ctx, uri) }
-                    val tr = MangaTranslator.translatePage(src, "Arabic")
+                    val tr = MangaTranslator.translatePage(src, targetLanguage)
                     pages.add(MangaPage(name, src, tr, null))
                 } catch (e: CancellationException) {
                     throw e
@@ -109,6 +114,25 @@ fun MangaScreen(initial: List<Uri>, onBack: () -> Unit) {
                         .clickable { job?.cancel(); progress = "" }
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) { Text("إلغاء", color = TextMain, fontSize = 14.sp) }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("لغة الترجمة", color = TextMid, fontSize = 12.sp)
+            listOf("Arabic" to "العربية", "English" to "English", "French" to "Français", "Spanish" to "Español").forEach { (code, label) ->
+                Box(
+                    Modifier.clip(RoundedCornerShape(16.dp))
+                        .background(if (targetLanguage == code) Violet else Card)
+                        .clickable { targetLanguage = code; AppSettings.targetLanguage = code }
+                        .padding(horizontal = 8.dp, vertical = 7.dp)
+                ) { Text(label, color = TextMain, fontSize = 10.sp) }
+            }
+        }
+        if (selectedUris.isNotEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                GradientButton("إعادة الترجمة باللغة المحددة", enabled = job?.isActive != true) { process(selectedUris) }
             }
         }
         if (progress.isNotEmpty()) Text(progress, color = TextMid, fontSize = 13.sp, modifier = Modifier.padding(16.dp))

@@ -11,60 +11,78 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      TMDB_KEY: ${{ secrets.TMDB_KEY }}
+      TRAKT_CLIENT_ID: ${{ secrets.TRAKT_CLIENT_ID }}
+      GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up Java
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
 
       - name: Install Android SDK packages
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
-      - name: Build release APK
-        run: gradle --no-daemon assembleRelease
+      - name: Validate required API secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in TMDB_KEY TRAKT_CLIENT_ID GEMINI_KEY; do
+            if [ -z "${!key:-}" ]; then
+              echo "::warning::GitHub Actions secret $key is missing. The APK can build, but the related feature will not authenticate. Add it in Settings > Secrets and variables > Actions. No secret value is printed."
+            fi
+          done
 
-      - name: Prepare single APK
+      - name: Create local.properties for this build
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            printf 'TMDB_KEY=%s\n' "$TMDB_KEY"
+            printf 'TRAKT_CLIENT_ID=%s\n' "$TRAKT_CLIENT_ID"
+            printf 'GEMINI_KEY=%s\n' "$GEMINI_KEY"
+          } > local.properties
+
+      - name: Build clean release APK
+        run: gradle --no-daemon clean assembleRelease
+
+      - name: Verify exactly one APK, package metadata and signature
         shell: bash
         run: |
           set -euo pipefail
           mapfile -t apks < <(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print)
           if [ "${#apks[@]}" -ne 1 ]; then
-            echo "Expected exactly one release APK, found ${#apks[@]}"
+            echo "Expected exactly one release APK; found ${#apks[@]}"
             printf '%s\n' "${apks[@]}"
             exit 1
           fi
+          APK="${apks[0]}"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -type f -name aapt | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          test -x "$AAPT"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          "$AAPT" dump badging "$APK" | grep -F "package: name='com.saridub.app'"
           mkdir -p output
-          cp "${apks[0]}" output/SARI-DUB.apk
+          cp "$APK" output/SARI-DUB.apk
           test -s output/SARI-DUB.apk
 
-      - name: Verify APK signature and package
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="output/SARI-DUB.apk"
-          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
-          "$APKSIGNER" verify --verbose --print-certs "$APK"
-          BADGING="$("$AAPT" dump badging "$APK" 2>/dev/null || true)"
-          printf '%s\\n' "$BADGING" | grep -F "package: name='com.saridub.app'"
-
-      - name: Upload APK
+      - name: Upload one APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: SARI-DUB

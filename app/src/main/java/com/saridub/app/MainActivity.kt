@@ -26,6 +26,7 @@ sealed class Screen {
     data class Details(val title: Title) : Screen()
     data class Player(val title: Title, val items: List<Playable>) : Screen()
     data class Manga(val uris: List<Uri>) : Screen()
+    data class VideoTranslate(val uri: Uri) : Screen()
     object Settings : Screen()
 }
 
@@ -41,10 +42,18 @@ fun AppRoot() {
         when (val s = stack.last()) {
             Screen.Home -> HomeScreen(
                 onSearch = { push(Screen.Search(it)) },
-                onVideoPicked = { uri -> push(Screen.Player(localTitle(), listOf(localPlayable(uri)))) },
+                onVideoPicked = { uri -> push(Screen.VideoTranslate(uri)) },
                 onMangaPicked = { uris -> push(Screen.Manga(uris)) },
                 onHistory = { push(Screen.Search("")) },
                 onSettings = { push(Screen.Settings) }
+            )
+            is Screen.VideoTranslate -> VideoTranslationScreen(
+                uri = s.uri,
+                onBack = { pop() },
+                onTranslate = { language ->
+                    AppSettings.targetLanguage = language
+                    push(Screen.Player(localTitle(), listOf(localPlayable(s.uri))))
+                }
             )
             is Screen.Search -> SearchScreen(s.q, onOpen = { push(Screen.Details(it)) }, onBack = { pop() })
             is Screen.Details -> DetailsScreen(

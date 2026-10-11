@@ -35,7 +35,11 @@ object Net {
                     Thread.sleep(minOf(2000L, (c.getHeaderField("Retry-After")?.toLongOrNull() ?: 1L) * 1000L))
                     continue
                 }
-                if (code !in 200..299) throw ApiException(kindFor(code), "HTTP $code", code)
+                if (code !in 200..299) {
+                    val errorBody = runCatching { c.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty() }.getOrDefault("")
+                    val detail = errorBody.replace(Regex("[\r\n\t]+"), " ").take(180)
+                    throw ApiException(kindFor(code), "HTTP $code" + if (detail.isBlank()) "" else ": $detail", code)
+                }
                 return c.inputStream.bufferedReader().use { it.readText() }
             } catch (e: SocketTimeoutException) {
                 throw ApiException(ErrKind.TIMEOUT, "timeout")
@@ -126,8 +130,13 @@ object Net {
     }
 
     fun describe(e: Throwable): String = when (e) {
-        is ApiException -> describeKind(e.kind)
+        is ApiException -> {
+            val category = describeKind(e.kind)
+            // Include a short provider message/status for diagnostics, never credentials.
+            val detail = e.message?.trim()?.take(180).orEmpty()
+            if (detail.isBlank() || detail == category) category else "$category — $detail"
+        }
         is JSONException -> describeKind(ErrKind.MALFORMED)
-        else -> e.message ?: "خطأ غير معروف"
+        else -> e.message?.take(180) ?: "خطأ غير معروف"
     }
 }

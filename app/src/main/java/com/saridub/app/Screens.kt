@@ -77,7 +77,12 @@ fun SettingsScreen(onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().background(Bg)) {
         TopBar("الإعدادات", onBack)
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            InfoCard("البحث", "TMDB، TVMaze، Trakt تعمل بالتوازي مع مهلة زمنية لكل مزود. إذا فشل أحدها تعمل البقية.")
+            InfoCard("حالة مفاتيح API",
+                "TMDB: ${if (Config.hasTmdb) "موجود" else "مفقود"} • " +
+                "Trakt: ${if (Config.hasTrakt) "موجود" else "مفقود"} • " +
+                "Gemini: ${if (Config.hasGemini) "موجود" else "مفقود"}. " +
+                "إذا ظهر مفتاح مفقود في نسخة GitHub، تحقق من Actions Secrets ثم أعد البناء.")
+            InfoCard("البحث", "TMDB وTrakt وTVMaze وCinemeta تُستعلم بالتوازي مع مهلة مستقلة لكل مزود. تعطل مزود لا يمنع عرض نتائج مزود آخر.")
             InfoCard("الترجمة", "Gemini (${Config.GEMINI_MODEL}) لترجمة الفقاعات وملفات SRT، مع تخزين الترجمة مؤقتاً.")
             InfoCard("التشغيل", "مصادر مرخّصة أو في الملك العام فقط (Internet Archive). لا تُنشأ روابط وهمية.")
         }

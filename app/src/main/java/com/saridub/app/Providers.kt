@@ -29,6 +29,15 @@ private fun traktHeaders() = mapOf(
     "trakt-api-key" to Config.TRAKT_CLIENT_ID
 )
 
+/** TMDB accepts either a v3 API key in the query or a v4 Read Access Token as Bearer. */
+private fun tmdbAuth(): Pair<String, Map<String, String>> {
+    val credential = Config.TMDB_KEY.trim()
+    val bearerToken = credential.startsWith("eyJ") && credential.count { it == '.' } >= 2
+    return if (bearerToken) "" to mapOf("Authorization" to "Bearer $credential")
+    else "api_key=${Net.enc(credential)}&" to emptyMap()
+}
+
+
 private fun stripHtml(s: String) = s.replace(Regex("<[^>]*>"), "").trim()
 
 fun tmdbToTitle(o: JSONObject, type: String): Title {
@@ -66,19 +75,65 @@ fun traktToTitle(o: JSONObject, type: String): Title {
 class TmdbProvider : TitleProvider {
     override val name = "TMDB"
     override suspend fun search(q: String): List<Title> = withContext(Dispatchers.IO) {
-        val out = ArrayList<Title>()
-        for (lang in listOf("en-US", "ar")) {
-            val url = "https://api.themoviedb.org/3/search/multi?api_key=${Config.TMDB_KEY}" +
-                    "&language=$lang&include_adult=false&query=${Net.enc(q)}"
-            val arr = JSONObject(Net.get(url)).optJSONArray("results") ?: continue
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val type = o.optString("media_type")
-                if (type != "movie" && type != "tv") continue
-                out.add(tmdbToTitle(o, type))
+        if (Config.TMDB_KEY.isBlank()) throw ApiException(ErrKind.MISSING_KEY, "TMDB_KEY is missing from the release configuration")
+        if (q.isBlank()) return@withContext emptyList()
+        // Match the likely language first. If it has no matches, retry in the other language.
+        val firstLanguage = if (q.any { it in '\u0600'..'\u06FF' }) "ar" else "en-US"
+        suspend fun lookup(language: String): List<Title> {
+            val (authQuery, headers) = tmdbAuth()
+            val url = "https://api.themoviedb.org/3/search/multi?${authQuery}language=$language&include_adult=false&query=${Net.enc(q)}"
+            val arr = JSONObject(Net.get(url, headers, timeout = 6500)).optJSONArray("results") ?: return emptyList()
+            return (0 until arr.length()).mapNotNull { i ->
+                val item = arr.optJSONObject(i) ?: return@mapNotNull null
+                val type = item.optString("media_type")
+                if (type != "movie" && type != "tv") return@mapNotNull null
+                tmdbToTitle(item, type)
             }
         }
-        out
+        val primary = lookup(firstLanguage)
+        if (primary.isNotEmpty()) primary else lookup(if (firstLanguage == "ar") "en-US" else "ar")
+    }
+}
+
+/** No-key metadata fallback for movies and series. It never returns a playable media URL. */
+class CinemetaProvider : TitleProvider {
+    override val name = "Cinemeta"
+
+    override suspend fun search(q: String): List<Title> = withContext(Dispatchers.IO) {
+        if (q.isBlank()) return@withContext emptyList()
+        val encoded = Net.enc(q).replace("+", "%20")
+        val results = ArrayList<Title>()
+        val errors = ArrayList<Exception>()
+        for ((catalog, kind) in listOf("movie" to "MOVIE", "series" to "SERIES")) {
+            try {
+                val endpoint = "https://v3-cinemeta.strem.io/catalog/$catalog/top/search=$encoded.json"
+                val metas = JSONObject(Net.get(endpoint, timeout = 6500)).optJSONArray("metas") ?: continue
+                for (i in 0 until metas.length()) {
+                    val item = metas.optJSONObject(i) ?: continue
+                    val title = item.optString("name").trim()
+                    if (title.isBlank()) continue
+                    val release = item.optString("releaseInfo", item.optString("year"))
+                    val year = Regex("(?:19|20)\\d{2}").find(release)?.value?.toIntOrNull()
+                    val poster = item.optString("poster").takeIf { it.startsWith("https://") || it.startsWith("http://") }
+                    results += Title(
+                        key = "cinemeta:$catalog:${item.optString("id")}",
+                        title = title,
+                        year = year,
+                        kind = kind,
+                        rating = item.optString("imdbRating").toDoubleOrNull() ?: 0.0,
+                        poster = poster,
+                        overview = item.optString("description").replace(Regex("<[^>]*>"), " ").trim(),
+                        source = "Cinemeta"
+                    )
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                errors += e
+            }
+        }
+        if (results.isEmpty() && errors.size == 2) throw errors.first()
+        results
     }
 }
 
@@ -106,6 +161,8 @@ class TvMazeProvider : TitleProvider {
 class TraktProvider : TitleProvider {
     override val name = "Trakt"
     override suspend fun search(q: String): List<Title> = withContext(Dispatchers.IO) {
+        if (Config.TRAKT_CLIENT_ID.isBlank()) throw ApiException(ErrKind.MISSING_KEY, "TRAKT_CLIENT_ID is missing from the release configuration")
+        if (q.isBlank()) return@withContext emptyList()
         val url = "https://api.trakt.tv/search/movie,show?query=${Net.enc(q)}&extended=full&limit=20"
         val arr = JSONArray(Net.get(url, traktHeaders()))
         (0 until arr.length()).mapNotNull { i ->
@@ -121,7 +178,9 @@ class TraktProvider : TitleProvider {
 object Trending {
     suspend fun load(): List<Title> = withContext(Dispatchers.IO) {
         val tmdb = runCatching {
-            val arr = JSONObject(Net.get("https://api.themoviedb.org/3/trending/movie/week?api_key=${Config.TMDB_KEY}"))
+            if (Config.TMDB_KEY.isBlank()) throw ApiException(ErrKind.MISSING_KEY, "TMDB_KEY is missing")
+            val (authQuery, headers) = tmdbAuth()
+            val arr = JSONObject(Net.get("https://api.themoviedb.org/3/trending/movie/week?${authQuery}language=en-US", headers))
                 .getJSONArray("results")
             (0 until arr.length()).map { tmdbToTitle(arr.getJSONObject(it), "movie") }
         }.getOrNull()
