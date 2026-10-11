@@ -1,9 +1,10 @@
 package com.saridub.app
 
-/** All keys live here. Move them to local.properties + BuildConfig before publishing. */
+/** Values come from local.properties through BuildConfig. Nothing secret is stored in source. */
 object Config {
-    const val TMDB_KEY = "8616f4a1b6066749e70c46ec30433290"
-    const val TRAKT_CLIENT_ID = "_rYR4wL-bD86B0Vq4XFu633zPKQH-RFid2FarJmPxUo"
+    val TMDB_KEY: String get() = BuildConfig.TMDB_KEY
+    val TRAKT_CLIENT_ID: String get() = BuildConfig.TRAKT_CLIENT_ID
     val GEMINI_KEY: String get() = BuildConfig.GEMINI_KEY
     const val GEMINI_MODEL = "gemini-2.5-flash-lite"
+    val hasGemini: Boolean get() = GEMINI_KEY.isNotBlank()
 }

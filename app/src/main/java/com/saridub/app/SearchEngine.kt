@@ -79,6 +79,7 @@ object SearchEngine {
             val k = Text.normalize(s.title.title) + "|" + (s.title.year ?: 0) + "|" + s.title.kind
             if (seen.add(k)) {
                 out.add(s)
+                if (seenTitles.size > 2000) seenTitles.clear()
                 seenTitles[s.title.key] = s.title
             }
         }

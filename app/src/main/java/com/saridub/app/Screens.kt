@@ -178,40 +178,6 @@ private fun LinearLoading() {
 }
 
 @Composable
-fun DetailsScreen(title: Title, onWatch: (List<Playable>) -> Unit, onBack: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    var busy by remember { mutableStateOf(false) }
-
-    Column(Modifier.fillMaxSize().background(Bg)) {
-        TopBar(title.title, onBack)
-        Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Poster(title.poster, Modifier.size(200.dp, 300.dp))
-            Spacer(Modifier.height(16.dp))
-            Text(title.title, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Spacer(Modifier.height(6.dp))
-            Text(metaLine(title), color = TextMid, fontSize = 13.sp)
-            Spacer(Modifier.height(14.dp))
-            if (title.overview.isNotBlank()) {
-                Text(title.overview, color = TextMid, fontSize = 14.sp, modifier = Modifier.fillMaxWidth())
-                Spacer(Modifier.height(20.dp))
-            }
-            GradientButton(if (busy) "جاري البحث عن مصدر…" else "مشاهدة", enabled = !busy) {
-                scope.launch {
-                    busy = true
-                    val items = Playback.resolve(title)
-                    busy = false
-                    onWatch(items)
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-        }
-    }
-}
-
-@Composable
 fun MangaScreen(onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()

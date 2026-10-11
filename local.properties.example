@@ -1,0 +1,5 @@
+# انسخ هذا الملف إلى local.properties وضع مفاتيحك فيه (هذا الملف لا يُرفع إلى Git)
+sdk.dir=C\:\\Users\\YOU\\AppData\\Local\\Android\\Sdk
+TMDB_KEY=
+TRAKT_CLIENT_ID=
+GEMINI_KEY=

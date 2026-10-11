@@ -4,10 +4,13 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val geminiKey = providers.gradleProperty("GEMINI_KEY")
-    .orElse(providers.environmentVariable("GEMINI_KEY"))
-    .orElse("")
-    .get()
+// Secrets are read from local.properties (git-ignored) or environment variables.
+val localProps = java.util.Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+fun secret(name: String): String =
+    "\"" + (localProps.getProperty(name) ?: System.getenv(name) ?: "") + "\""
 
 android {
     namespace = "com.saridub.app"
@@ -17,14 +20,11 @@ android {
         applicationId = "com.saridub.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "2.0.0"
-
-        buildConfigField(
-            "String",
-            "GEMINI_KEY",
-            "\"${geminiKey.replace("\\", "\\\\").replace("\"", "\\\"")}\""
-        )
+        versionCode = 2
+        versionName = "2.1.0"
+        buildConfigField("String", "TMDB_KEY", secret("TMDB_KEY"))
+        buildConfigField("String", "TRAKT_CLIENT_ID", secret("TRAKT_CLIENT_ID"))
+        buildConfigField("String", "GEMINI_KEY", secret("GEMINI_KEY"))
     }
 
     buildFeatures {
@@ -35,6 +35,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
@@ -42,10 +43,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 }
 
 dependencies {
@@ -59,4 +57,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-common:1.4.1")
+    // WebSocket client for Edge-TTS (Android has no built-in WebSocket client)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
