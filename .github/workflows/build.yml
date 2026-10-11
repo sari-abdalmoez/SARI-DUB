@@ -1,0 +1,51 @@
+name: SARI-DUB Android Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build release APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Prepare single APK
+        run: |
+          set -eu
+          mkdir -p output
+          find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print
+          count=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | wc -l)
+          [ "$count" -eq 1 ] || { echo "Expected exactly one APK, found $count"; exit 1; }
+          cp app/build/outputs/apk/release/*.apk output/SARI-DUB.apk
+          test -s output/SARI-DUB.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SARI-DUB
+          path: output/SARI-DUB.apk
+          if-no-files-found: error
