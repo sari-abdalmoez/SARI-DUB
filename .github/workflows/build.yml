@@ -53,6 +53,16 @@ jobs:
           cp "${apks[0]}" output/SARI-DUB.apk
           test -s output/SARI-DUB.apk
 
+      - name: Verify APK signature and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="output/SARI-DUB.apk"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          "$AAPT" dump badging "$APK" | grep -F "package: name='com.saridub.app'"
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
