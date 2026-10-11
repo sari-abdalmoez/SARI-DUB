@@ -61,7 +61,8 @@ jobs:
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
           "$APKSIGNER" verify --verbose --print-certs "$APK"
-          "$AAPT" dump badging "$APK" | grep -F "package: name='com.saridub.app'"
+          BADGING="$("$AAPT" dump badging "$APK" 2>/dev/null || true)"
+          printf '%s\\n' "$BADGING" | grep -F "package: name='com.saridub.app'"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
