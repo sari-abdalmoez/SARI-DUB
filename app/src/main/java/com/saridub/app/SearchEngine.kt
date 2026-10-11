@@ -9,8 +9,8 @@ import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Unified search: queries all providers concurrently, each with its own timeout.
- * A failing provider just contributes nothing. Results are streamed through onPartial.
+ * Unified search. All providers are queried concurrently with their own timeout. A failing provider
+ * contributes nothing and its reason is recorded in providerStatus.
  */
 object SearchEngine {
     data class Scored(val title: Title, val score: Double)
@@ -18,6 +18,7 @@ object SearchEngine {
     private val providers: List<TitleProvider> = listOf(TmdbProvider(), TvMazeProvider(), TraktProvider())
     private val cache = ConcurrentHashMap<String, Pair<Long, List<Scored>>>()
     private val seenTitles = ConcurrentHashMap<String, Title>()
+    private val providerStatus = ConcurrentHashMap<String, ErrKind>()
     private const val TTL_MS = 10 * 60_000L
     private const val PROVIDER_TIMEOUT_MS = 6_000L
 
@@ -34,13 +35,20 @@ object SearchEngine {
         val collected: MutableList<Title> = Collections.synchronizedList(ArrayList())
         providers.map { p ->
             async {
+                var kind = ErrKind.OK
                 val res: List<Title> = try {
-                    withTimeoutOrNull(PROVIDER_TIMEOUT_MS) { p.search(q) } ?: emptyList()
+                    withTimeoutOrNull(PROVIDER_TIMEOUT_MS) { p.search(q) }
+                        ?: run { kind = ErrKind.TIMEOUT; emptyList<Title>() }
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: ApiException) {
+                    kind = e.kind
+                    emptyList<Title>()
                 } catch (e: Exception) {
-                    emptyList()
+                    kind = ErrKind.MALFORMED
+                    emptyList<Title>()
                 }
+                providerStatus[p.name] = kind
                 collected.addAll(res)
                 onPartial(rank(q, collected.toList()))
             }
@@ -51,7 +59,12 @@ object SearchEngine {
         ranked
     }
 
-    /** Local autocomplete from titles seen in recent searches. Instant, no network. */
+    /** Human-readable list of providers that failed in the last search. Empty when everything worked. */
+    fun statusLine(): String = providerStatus.entries
+        .filter { it.value != ErrKind.OK }
+        .joinToString(" • ") { "${it.key}: ${Net.describeKind(it.value)}" }
+
+    /** Instant autocomplete from titles seen in recent searches. */
     fun suggest(q: String, limit: Int = 6): List<Title> {
         val nq = Text.normalize(q)
         if (nq.length < 2) return emptyList()
@@ -71,7 +84,6 @@ object SearchEngine {
         val scored = items.map { Scored(it, score(q, it, wantSeries, wantMovie, year)) }
             .sortedByDescending { it.score }
 
-        // Remove duplicates from different providers: same normalised title, year and kind.
         val seen = HashSet<String>()
         val out = ArrayList<Scored>()
         for (s in scored) {
@@ -86,14 +98,11 @@ object SearchEngine {
         return out
     }
 
-    private fun score(
-        q: String, t: Title, wantSeries: Boolean, wantMovie: Boolean, year: Int?
-    ): Double {
+    private fun score(q: String, t: Title, wantSeries: Boolean, wantMovie: Boolean, year: Int?): Double {
         val nq = Text.normalize(q)
         val nt = Text.normalize(t.title)
         var s = Text.similarity(nq, nt)
 
-        // Cross-script match (Arabic query vs Latin title and vice versa)
         val sq = Text.skeleton(q)
         val st = Text.skeleton(t.title)
         if (sq.isNotEmpty() && st.isNotEmpty()) s = maxOf(s, Text.similarity(sq, st) * 0.95)
@@ -102,7 +111,6 @@ object SearchEngine {
             if (alt.isNotBlank()) s = maxOf(s, Text.similarity(nq, Text.normalize(alt)) * 0.95)
         }
 
-        // Token coverage: handles extra or missing words ("the", subtitles, etc.)
         val qt = Text.tokens(q)
         val tt = Text.tokens(t.title)
         if (qt.isNotEmpty()) s = maxOf(s, qt.count { it in tt }.toDouble() / qt.size * 0.9)

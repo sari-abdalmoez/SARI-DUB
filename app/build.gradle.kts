@@ -4,15 +4,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-// Secrets are read from local.properties (git-ignored) or environment variables.
-import java.util.Properties
-
-val localProps = Properties().apply {
+// Secrets come from local.properties (git-ignored) or environment variables. Never from source.
+val localProps = java.util.Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
 fun secret(name: String): String =
     "\"" + (localProps.getProperty(name) ?: System.getenv(name) ?: "") + "\""
+
+val releaseKeystore: String? = System.getenv("KEYSTORE_FILE")
 
 android {
     namespace = "com.saridub.app"
@@ -22,11 +22,22 @@ android {
         applicationId = "com.saridub.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.1.0"
+        versionCode = 3
+        versionName = "2.2.0"
         buildConfigField("String", "TMDB_KEY", secret("TMDB_KEY"))
         buildConfigField("String", "TRAKT_CLIENT_ID", secret("TRAKT_CLIENT_ID"))
         buildConfigField("String", "GEMINI_KEY", secret("GEMINI_KEY"))
+    }
+
+    signingConfigs {
+        create("ci") {
+            if (releaseKeystore != null) {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
     }
 
     buildFeatures {
@@ -36,8 +47,9 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
+            signingConfig = if (releaseKeystore != null) signingConfigs.getByName("ci")
+                            else signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -60,6 +72,5 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
     implementation("androidx.media3:media3-common:1.4.1")
-    // WebSocket client for Edge-TTS (Android has no built-in WebSocket client)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

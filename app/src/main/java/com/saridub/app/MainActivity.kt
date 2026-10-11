@@ -1,8 +1,8 @@
 package com.saridub.app
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -24,7 +24,7 @@ sealed class Screen {
     data class Search(val q: String) : Screen()
     data class Details(val title: Title) : Screen()
     data class Player(val title: Title, val items: List<Playable>) : Screen()
-    object Manga : Screen()
+    data class Manga(val uris: List<Uri>) : Screen()
     object Settings : Screen()
 }
 
@@ -40,19 +40,35 @@ fun AppRoot() {
         when (val s = stack.last()) {
             Screen.Home -> HomeScreen(
                 onSearch = { push(Screen.Search(it)) },
-                onOpen = { push(Screen.Details(it)) },
-                onManga = { push(Screen.Manga) },
+                onVideoPicked = { uri -> push(Screen.Player(localTitle(), listOf(localPlayable(uri)))) },
+                onMangaPicked = { uris -> push(Screen.Manga(uris)) },
+                onHistory = { push(Screen.Search("")) },
                 onSettings = { push(Screen.Settings) }
             )
             is Screen.Search -> SearchScreen(s.q, onOpen = { push(Screen.Details(it)) }, onBack = { pop() })
             is Screen.Details -> DetailsScreen(
-                s.title,
+                title = s.title,
                 onWatch = { items -> push(Screen.Player(s.title, items)) },
+                onOpenRelated = { push(Screen.Details(it)) },
                 onBack = { pop() }
             )
             is Screen.Player -> PlayerScreen(s.title, s.items, onBack = { pop() })
-            Screen.Manga -> MangaScreen(onBack = { pop() })
+            is Screen.Manga -> MangaScreen(s.uris, onBack = { pop() })
             Screen.Settings -> SettingsScreen(onBack = { pop() })
         }
     }
 }
+
+private fun localTitle(): Title = Title(
+    key = "local:${System.nanoTime()}",
+    title = "فيديو من الجهاز",
+    year = null,
+    kind = "MOVIE",
+    rating = 0.0,
+    poster = null,
+    overview = "ملف فيديو من جهازك.",
+    source = "Device"
+)
+
+private fun localPlayable(uri: Uri): Playable =
+    Playable(uri.toString(), "ملف الجهاز", null, "ملف من الجهاز")

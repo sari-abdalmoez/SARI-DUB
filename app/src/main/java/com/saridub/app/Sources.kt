@@ -1,5 +1,6 @@
 package com.saridub.app
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -8,7 +9,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
-/** A real, playable URL from a licensed/public-domain source, plus an optional subtitle file. */
+/** A real URL from a licensed or public-domain source, plus an optional subtitle file. */
 data class Playable(val url: String, val label: String, val subtitleUrl: String?, val sourceName: String)
 
 interface PlaybackSource {
@@ -16,24 +17,33 @@ interface PlaybackSource {
     suspend fun resolve(t: Title): List<Playable>
 }
 
-/** Keeps metadata search separate from playback. Returns only sources that really exist. */
+/**
+ * Metadata search and playback are separate. A source is returned only if its media URL answers
+ * a HEAD request, so the player never opens a dead link.
+ */
 object Playback {
     private val sources: List<PlaybackSource> = listOf(InternetArchiveSource())
 
     suspend fun resolve(t: Title): List<Playable> = coroutineScope {
-        sources.map { s ->
+        val found = sources.map { s ->
             async {
                 try {
                     withTimeoutOrNull(15_000) { s.resolve(t) } ?: emptyList()
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     emptyList()
                 }
             }
         }.awaitAll().flatten()
+
+        found.map { p ->
+            async(Dispatchers.IO) { if (Net.isReachable(p.url)) p else null }
+        }.awaitAll().filterNotNull()
     }
 }
 
-/** Internet Archive holds public-domain films. Only matches with a very similar title are used. */
+/** Internet Archive holds public-domain films. Title matching uses similarity and token coverage. */
 class InternetArchiveSource : PlaybackSource {
     override val name = "Internet Archive"
 
@@ -41,7 +51,7 @@ class InternetArchiveSource : PlaybackSource {
         val safe = t.title.replace("\"", "")
         val q = "title:(\"$safe\") AND mediatype:movies"
         val url = "https://archive.org/advancedsearch.php?q=${Net.enc(q)}" +
-                "&fl[]=identifier&fl[]=title&rows=6&output=json"
+                "&fl[]=identifier&fl[]=title&rows=8&output=json"
         val docs = JSONObject(Net.get(url)).getJSONObject("response").getJSONArray("docs")
         val want = Text.normalize(t.title)
         val out = ArrayList<Playable>()
@@ -49,7 +59,9 @@ class InternetArchiveSource : PlaybackSource {
         for (i in 0 until docs.length()) {
             val doc = docs.getJSONObject(i)
             val id = doc.getString("identifier")
-            if (Text.similarity(want, Text.normalize(doc.optString("title"))) < 0.7) continue
+            val got = Text.normalize(doc.optString("title"))
+            val score = maxOf(Text.similarity(want, got), coverage(want, got))
+            if (score < 0.75) continue
 
             val files = JSONObject(Net.get("https://archive.org/metadata/$id")).optJSONArray("files") ?: continue
             var sub: String? = null
@@ -69,5 +81,12 @@ class InternetArchiveSource : PlaybackSource {
             if (out.size >= 3) break
         }
         out
+    }
+
+    private fun coverage(query: String, doc: String): Double {
+        val q = Text.tokens(query)
+        if (q.isEmpty()) return 0.0
+        val d = Text.tokens(doc)
+        return q.count { it in d }.toDouble() / q.size
     }
 }

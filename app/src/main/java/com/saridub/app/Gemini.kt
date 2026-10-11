@@ -19,7 +19,7 @@ object Gemini {
         "https://generativelanguage.googleapis.com/v1beta/models/${Config.GEMINI_MODEL}:generateContent"
 
     suspend fun generate(parts: JSONArray, json: Boolean): String = withContext(Dispatchers.IO) {
-        check(Config.hasGemini) { "مفتاح Gemini غير مضبوط في local.properties" }
+        if (!Config.hasGemini) throw ApiException(ErrKind.MISSING_KEY, "GEMINI_KEY is not set")
         val gen = JSONObject().put("temperature", 0.2)
         if (json) gen.put("responseMimeType", "application/json")
         val body = JSONObject()
@@ -33,7 +33,7 @@ object Gemini {
             code = retry.first
             resp = retry.second
         }
-        if (code !in 200..299) throw IllegalStateException("Gemini HTTP $code: ${resp.take(160)}")
+        if (code !in 200..299) throw ApiException(Net.kindFor(code), "Gemini HTTP $code: ${resp.take(160)}", code)
 
         JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
             .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")

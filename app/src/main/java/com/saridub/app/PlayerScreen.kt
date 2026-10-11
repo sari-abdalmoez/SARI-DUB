@@ -117,10 +117,12 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
                     doneSegs.add(target)
                     launch {
                         try {
+                            status = "جاري ترجمة المقطع ${target + 1}…"
                             val cues = DubEngine.segment(ctx, url, target)
                             dubQueue.addAll(cues)
                             if (srtLines.isEmpty()) aiLines.addAll(cues.map { Line(it.startMs, it.endMs, it.text) })
-                        } catch (_: Exception) {
+                        } catch (e: Exception) {
+                            status = "تعذّرت ترجمة المقطع ${target + 1}: ${Net.describe(e)}"
                             // A failed segment is skipped; the video keeps playing with its original audio.
                         } finally {
                             busy = false

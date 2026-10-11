@@ -24,9 +24,9 @@ object AppSettings {
 
 /** Copies a time range of a video without re-encoding (fast on budget phones). Returns the real start in ms. */
 object VideoCutter {
-    fun cut(source: String, startMs: Long, endMs: Long, out: File): Long {
+    fun cut(ctx: Context, source: String, startMs: Long, endMs: Long, out: File): Long {
         val ex = MediaExtractor()
-        ex.setDataSource(source)
+        ex.setDataSource(ctx, android.net.Uri.parse(source), null)
         val mux = MediaMuxer(out.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
         try {
             val map = HashMap<Int, Int>()
@@ -107,7 +107,7 @@ object DubEngine {
 
         val tmp = File(ctx.cacheDir, "seg_${key.hashCode()}.mp4")
         try {
-            val baseMs = VideoCutter.cut(src, index * SEG_MS, (index + 1) * SEG_MS, tmp)
+            val baseMs = VideoCutter.cut(ctx, src, index * SEG_MS, (index + 1) * SEG_MS, tmp)
             val speech = Gemini.analyzeVideo(tmp.readBytes(), "Arabic")
             val cues = speech.mapNotNull { c ->
                 val (rate, pitch, style) = prosodyFor(c.emotion)
