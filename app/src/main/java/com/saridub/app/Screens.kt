@@ -71,24 +71,3 @@ private fun LinearLoading() {
         Text("جاري البحث في المصادر…", color = TextMid, fontSize = 13.sp)
     }
 }
-
-@Composable
-fun SettingsScreen(onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Bg)) {
-        TopBar("الإعدادات", onBack)
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            InfoCard("البحث", "TMDB، TVMaze، Trakt تعمل بالتوازي مع مهلة زمنية لكل مزود. إذا فشل أحدها تعمل البقية.")
-            InfoCard("الترجمة", "Gemini (${Config.GEMINI_MODEL}) لترجمة الفقاعات وملفات SRT، مع تخزين الترجمة مؤقتاً.")
-            InfoCard("التشغيل", "مصادر مرخّصة أو في الملك العام فقط (Internet Archive). لا تُنشأ روابط وهمية.")
-        }
-    }
-}
-
-@Composable
-private fun InfoCard(title: String, body: String) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(Card).padding(16.dp)) {
-        Text(title, color = TextMain, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Spacer(Modifier.height(6.dp))
-        Text(body, color = TextMid, fontSize = 13.sp)
-    }
-}
