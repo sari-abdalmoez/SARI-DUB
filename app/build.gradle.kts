@@ -14,8 +14,17 @@ if (localPropsFile.exists()) {
         localProps.load(stream)
     }
 }
-fun secret(name: String): String =
-    "\"" + (localProps.getProperty(name) ?: System.getenv(name) ?: "") + "\""
+fun secret(name: String): String {
+    // Empty local.properties entries must not mask populated CI environment variables.
+    val value = System.getenv(name)?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty(name)?.takeIf { it.isNotBlank() }
+        ?: ""
+    val escaped = value.replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    return "\"$escaped\""
+}
 
 val releaseKeystore: String? = System.getenv("KEYSTORE_FILE")
 

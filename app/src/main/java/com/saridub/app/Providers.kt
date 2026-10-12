@@ -75,7 +75,7 @@ fun traktToTitle(o: JSONObject, type: String): Title {
 class TmdbProvider : TitleProvider {
     override val name = "TMDB"
     override suspend fun search(q: String): List<Title> = withContext(Dispatchers.IO) {
-        if (Config.TMDB_KEY.isBlank()) throw ApiException(ErrKind.MISSING_KEY, "TMDB_KEY is missing from the release configuration")
+        if (Config.TMDB_KEY.isBlank()) throw ApiException(ErrKind.MISSING_KEY, "TMDB_KEY is not configured; add it in Settings")
         if (q.isBlank()) return@withContext emptyList()
         // Match the likely language first. If it has no matches, retry in the other language.
         val firstLanguage = if (q.any { it in '\u0600'..'\u06FF' }) "ar" else "en-US"

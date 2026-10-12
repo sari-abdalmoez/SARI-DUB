@@ -118,7 +118,7 @@ object Net {
     fun pathEnc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     fun describeKind(k: ErrKind): String = when (k) {
-        ErrKind.MISSING_KEY -> "المفتاح غير مضبوط في local.properties"
+        ErrKind.MISSING_KEY -> "مفتاح الخدمة غير مضبوط. افتح الإعدادات وأدخله ثم افحصه"
         ErrKind.INVALID_KEY -> "المفتاح غير صالح أو غير مصرّح به"
         ErrKind.RATE_LIMITED -> "تجاوزت الحد المسموح من الطلبات، حاول لاحقاً"
         ErrKind.TIMEOUT -> "انتهت مهلة الاتصال"

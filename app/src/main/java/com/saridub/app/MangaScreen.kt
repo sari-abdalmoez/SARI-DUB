@@ -140,7 +140,7 @@ fun MangaScreen(initial: List<Uri>, onBack: () -> Unit) {
         if (pages.isEmpty() && progress.isEmpty()) {
             Text(
                 "اختر صفحة أو أكثر. تُمحى الكلمات الأصلية داخل الفقاعات وتُكتب الترجمة مكانها. " +
-                        "يحتاج هذا مفتاح Gemini صالحاً في local.properties.",
+                        "تحتاج هذه العملية مفتاح Gemini صالحاً؛ أضفه وافحصه من الإعدادات.",
                 color = TextMid, fontSize = 13.sp, modifier = Modifier.padding(16.dp)
             )
         }

@@ -87,7 +87,7 @@ fun VideoTranslationScreen(uri: Uri, onBack: () -> Unit, onTranslate: (String) -
         }
         Spacer(Modifier.height(12.dp))
         if (!Config.hasGemini) {
-            Text("مفتاح Gemini غير موجود في هذه النسخة. سيعمل المشغل، لكن الترجمة تحتاج GEMINI_KEY صالحًا وإعادة البناء.",
+            Text("مفتاح Gemini غير مضبوط. افتح الإعدادات وأدخل GEMINI_KEY ثم ارجع إلى هنا؛ لا يلزم إعادة بناء التطبيق.",
                 color = Color(0xFF9B3B20), fontSize = 12.sp, textAlign = TextAlign.Center)
             Spacer(Modifier.height(10.dp))
         }
@@ -100,7 +100,7 @@ fun VideoTranslationScreen(uri: Uri, onBack: () -> Unit, onTranslate: (String) -
             contentAlignment = Alignment.Center
         ) { Text("ترجمة وتشغيل", color = VideoOrange, fontSize = 17.sp, fontWeight = FontWeight.Bold) }
         Spacer(Modifier.height(10.dp))
-        Text("تحتاج ترجمة الصوت إلى اتصال إنترنت ومفتاح Gemini صالحًا. عند فشل الخدمة سيظهر السبب الحقيقي.",
+        Text("تحتاج ترجمة الصوت إلى اتصال إنترنت ومفتاح Gemini صالحًا. يمكنك حفظ المفتاح وفحصه من الإعدادات.",
             color = Color(0xFF6B7385), fontSize = 11.sp, textAlign = TextAlign.Center)
     }
 }
