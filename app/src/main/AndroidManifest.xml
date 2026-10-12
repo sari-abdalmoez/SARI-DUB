@@ -12,7 +12,6 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@android:drawable/sym_def_app_icon"
         android:label="SARI DUB"
         android:supportsRtl="true"
         android:theme="@style/Theme.SariDub">
