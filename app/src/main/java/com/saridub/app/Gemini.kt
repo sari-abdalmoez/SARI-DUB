@@ -20,7 +20,7 @@ object Gemini {
 
     suspend fun generate(parts: JSONArray, json: Boolean): String = withContext(Dispatchers.IO) {
         if (!Config.hasGemini) throw ApiException(ErrKind.MISSING_KEY, "GEMINI_KEY is not set")
-        val gen = JSONObject().put("temperature", 0.2)
+        val gen = JSONObject()
         if (json) gen.put("responseMimeType", "application/json")
         val body = JSONObject()
             .put("contents", JSONArray().put(JSONObject().put("parts", parts)))
