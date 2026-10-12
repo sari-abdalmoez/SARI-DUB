@@ -120,7 +120,6 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
                             status = "جاري ترجمة المقطع ${target + 1}…"
                             val cues = DubEngine.segment(ctx, url, target)
                             dubQueue.addAll(cues)
-                            if (cues.any { it.file == null }) status = "تمت الترجمة النصية، لكن تعذّرت دبلجة بعض الجمل صوتياً."
                             if (srtLines.isEmpty()) aiLines.addAll(cues.map { Line(it.startMs, it.endMs, it.text) })
                         } catch (e: Exception) {
                             status = "تعذّرت ترجمة المقطع ${target + 1}: ${Net.describe(e)}"
@@ -135,13 +134,10 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
             val due = dubQueue.firstOrNull { it.startMs !in played && p >= it.startMs && p < it.endMs + 1500 }
             if (due != null) {
                 played.add(due.startMs)
-                val voiceFile = due.file
-                if (voiceFile != null && voiceFile.isFile && voiceFile.length() > 0L) {
-                    dub.setMediaItem(MediaItem.fromUri(Uri.fromFile(voiceFile)))
-                    dub.prepare()
-                    dub.play()
-                    main.volume = 0.2f
-                }
+                dub.setMediaItem(MediaItem.fromUri(Uri.fromFile(due.file)))
+                dub.prepare()
+                dub.play()
+                main.volume = 0.2f
             }
         }
     }

@@ -53,11 +53,11 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-val Bg = Color(0xFF121318)
-val Card = Color(0xFF1E2029)
+val Bg = Color(0xFF0D0E13)
+val Card = Color(0xFF1A1C25)
 val Accent = Color(0xFFFF7A1A)
-val Violet = Color(0xFF00F2FE)
-val Sky = Color(0xFF4FACFE)
+val Violet = Color(0xFF7B61FF)
+val Sky = Color(0xFF3EA8FF)
 val TextMain = Color(0xFFF2F3F7)
 val TextMid = Color(0xFF9AA0B4)
 val GradientBrush = Brush.horizontalGradient(listOf(Violet, Sky))

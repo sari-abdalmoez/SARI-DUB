@@ -1,5 +1,3 @@
-import java.util.Properties
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,24 +5,12 @@ plugins {
 }
 
 // Secrets come from local.properties (git-ignored) or environment variables. Never from source.
-val localProps = Properties()
-val localPropsFile = rootProject.file("local.properties")
-if (localPropsFile.exists()) {
-    localPropsFile.inputStream().use { stream ->
-        localProps.load(stream)
-    }
+val localProps = java.util.Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
 }
-fun secret(name: String): String {
-    // Empty local.properties entries must not mask populated CI environment variables.
-    val value = System.getenv(name)?.takeIf { it.isNotBlank() }
-        ?: localProps.getProperty(name)?.takeIf { it.isNotBlank() }
-        ?: ""
-    val escaped = value.replace("\\", "\\\\")
-        .replace("\"", "\\\"")
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
-    return "\"$escaped\""
-}
+fun secret(name: String): String =
+    "\"" + (localProps.getProperty(name) ?: System.getenv(name) ?: "") + "\""
 
 val releaseKeystore: String? = System.getenv("KEYSTORE_FILE")
 

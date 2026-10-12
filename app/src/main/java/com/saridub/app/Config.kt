@@ -1,10 +1,12 @@
 package com.saridub.app
 
 import android.content.Context
+import androidx.compose.runtime.mutableStateOf
 
 /**
  * API credentials may be supplied at build time (CI/local.properties) or entered in Settings
  * after installation. Runtime-entered values are stored in this app's private preferences.
+ * Nothing secret is stored in source code.
  */
 object Config {
     private const val PREFS = "sari_dub_api_config"
@@ -24,7 +26,6 @@ object Config {
     val TMDB_KEY: String get() = value("TMDB_KEY", BuildConfig.TMDB_KEY)
     val TRAKT_CLIENT_ID: String get() = value("TRAKT_CLIENT_ID", BuildConfig.TRAKT_CLIENT_ID)
     val GEMINI_KEY: String get() = value("GEMINI_KEY", BuildConfig.GEMINI_KEY)
-
     const val GEMINI_MODEL = "gemini-3.5-flash-lite"
 
     val hasTmdb: Boolean get() = TMDB_KEY.isNotBlank()

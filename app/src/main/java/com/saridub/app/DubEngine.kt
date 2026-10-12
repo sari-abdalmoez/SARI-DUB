@@ -16,15 +16,13 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 
-data class DubCue(val startMs: Long, val endMs: Long, val file: File?, val text: String)
+data class DubCue(val startMs: Long, val endMs: Long, val file: File, val text: String)
 
 object AppSettings {
     var dubEnabled by mutableStateOf(true)
-    /** Language selected for video and manga translation. */
-    var targetLanguage by mutableStateOf("Arabic")
 }
 
-/** Copies only the audio track for a time range without re-encoding. Returns its real start in ms. */
+/** Copies a time range of a video without re-encoding (fast on budget phones). Returns the real start in ms. */
 object VideoCutter {
     fun cut(ctx: Context, source: String, startMs: Long, endMs: Long, out: File): Long {
         val ex = MediaExtractor()
@@ -34,13 +32,12 @@ object VideoCutter {
             val map = HashMap<Int, Int>()
             for (i in 0 until ex.trackCount) {
                 val mime = ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: continue
-                if (mime.startsWith("audio/")) {
+                if (mime.startsWith("video/") || mime.startsWith("audio/")) {
                     ex.selectTrack(i)
                     map[i] = mux.addTrack(ex.getTrackFormat(i))
                 }
             }
-            if (map.isEmpty()) throw ApiException(ErrKind.MALFORMED, "The selected video has no readable audio track")
-        ex.seekTo(startMs * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            ex.seekTo(startMs * 1000, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             val base = max(0L, ex.sampleTime)
             mux.start()
             val buf = ByteBuffer.allocate(4 shl 20)
@@ -108,20 +105,18 @@ object DubEngine {
         val key = "${src.hashCode()}|$index"
         cache[key]?.let { return@withContext it }
 
-        val tmp = File(ctx.cacheDir, "seg_${key.hashCode()}.m4a")
+        val tmp = File(ctx.cacheDir, "seg_${key.hashCode()}.mp4")
         try {
             val baseMs = VideoCutter.cut(ctx, src, index * SEG_MS, (index + 1) * SEG_MS, tmp)
-            val speech = Gemini.analyzeVideo(tmp.readBytes(), AppSettings.targetLanguage)
+            val speech = Gemini.analyzeVideo(tmp.readBytes(), "Arabic")
             val cues = speech.mapNotNull { c ->
                 val (rate, pitch, style) = prosodyFor(c.emotion)
                 val voice = Casting.voiceFor(c.speaker, c.gender)
                 val bytes = runCatching {
                     withTimeout(25_000) { EdgeTts.synthesize(c.text, voice, rate, pitch, style) }
-                }.getOrNull()
-                val f = bytes?.let { data ->
-                    File(ctx.cacheDir, "tts_${key.hashCode()}_${c.startMs}.mp3").also { it.writeBytes(data) }
-                }
-                // Keep the translated text cue even if voice synthesis is unavailable.
+                }.getOrNull() ?: return@mapNotNull null
+                val f = File(ctx.cacheDir, "tts_${key.hashCode()}_${c.startMs}.mp3")
+                f.writeBytes(bytes)
                 DubCue(baseMs + c.startMs, baseMs + c.endMs, f, c.text)
             }
             cache[key] = cues
