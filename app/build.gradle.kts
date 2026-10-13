@@ -1,4 +1,3 @@
-import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,7 +5,7 @@ plugins {
 }
 
 // Secrets come from local.properties (git-ignored) or environment variables. Never from source.
-val localProps = Properties().apply {
+val localProps = java.util.Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
@@ -23,8 +22,8 @@ android {
         applicationId = "com.saridub.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.2.0"
+        versionCode = 4
+        versionName = "2.3.0"
         buildConfigField("String", "TMDB_KEY", secret("TMDB_KEY"))
         buildConfigField("String", "TRAKT_CLIENT_ID", secret("TRAKT_CLIENT_ID"))
         buildConfigField("String", "GEMINI_KEY", secret("GEMINI_KEY"))

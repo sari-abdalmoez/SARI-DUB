@@ -71,7 +71,7 @@ object Net {
     }
 
     /** POST JSON. Returns the HTTP code and body, including error bodies, so callers can read the provider message. */
-    fun post(url: String, body: String, headers: Map<String, String>, timeout: Int = 40000): Pair<Int, String> {
+    fun post(url: String, body: String, headers: Map<String, String>, timeout: Int = 150000): Pair<Int, String> {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
             c.connectTimeout = 10000
@@ -114,7 +114,7 @@ object Net {
     fun pathEnc(s: String): String = URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
     fun describeKind(k: ErrKind): String = when (k) {
-        ErrKind.MISSING_KEY -> "المفتاح غير مضبوط في local.properties"
+        ErrKind.MISSING_KEY -> "المفتاح غير مضبوط، أدخله في الإعدادات"
         ErrKind.INVALID_KEY -> "المفتاح غير صالح أو غير مصرّح به"
         ErrKind.RATE_LIMITED -> "تجاوزت الحد المسموح من الطلبات، حاول لاحقاً"
         ErrKind.TIMEOUT -> "انتهت مهلة الاتصال"

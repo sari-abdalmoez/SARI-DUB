@@ -1,6 +1,12 @@
 package com.saridub.app
 
+import android.graphics.Color as AndroidColor
 import android.net.Uri
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,19 +53,20 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
     var idx by remember { mutableStateOf(0) }
     var status by remember { mutableStateOf("جاري تجهيز المصدر…") }
     var srcUrl by remember { mutableStateOf<String?>(null) }
+    var isEmbed by remember { mutableStateOf(false) }
     var pos by remember { mutableStateOf(0L) }
+    var webView by remember { mutableStateOf<WebView?>(null) }
     val srtLines = remember { mutableStateListOf<Line>() }
     val aiLines = remember { mutableStateListOf<Line>() }
     val dubQueue = remember { mutableStateListOf<DubCue>() }
     val played = remember { HashSet<Long>() }
     val doneSegs = remember { HashSet<Int>() }
 
+    // Direct files: a playback error moves on to the next source.
     DisposableEffect(main) {
-        // Failover: a broken source moves to the next one.
         val mainListener = object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) { idx += 1 }
         }
-        // Restore the original volume once a dubbed line finishes.
         val dubListener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) main.volume = 1f
@@ -75,9 +82,16 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
         }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            webView?.stopLoading()
+            webView?.destroy()
+        }
+    }
+
     LaunchedEffect(items, idx) {
         if (items.isEmpty()) {
-            status = "لا يوجد مصدر تشغيل مرخّص لهذا العنوان حالياً."
+            status = "لا يوجد مصدر تشغيل متاح لهذا العنوان حالياً."
             return@LaunchedEffect
         }
         if (idx >= items.size) {
@@ -87,7 +101,17 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
         val src = items[idx]
         status = "المصدر ${idx + 1} من ${items.size}: ${src.sourceName}"
         srtLines.clear(); aiLines.clear(); dubQueue.clear(); played.clear(); doneSegs.clear()
+        isEmbed = src.embed
         srcUrl = src.url
+
+        if (src.embed) {
+            // Web player: ExoPlayer is stopped; the WebView handles playback and its own errors.
+            main.stop()
+            main.clearMediaItems()
+            main.volume = 1f
+            return@LaunchedEffect
+        }
+
         main.setMediaItem(MediaItem.fromUri(src.url))
         main.prepare()
         main.playWhenReady = true
@@ -96,13 +120,14 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
         }
     }
 
-    // Playback loop: picks up segments ahead of the playhead, plays dub lines, and tracks position.
+    // Dubbing loop. Only runs for direct files, because embed pages cannot be downloaded.
     LaunchedEffect(srcUrl) {
         val url = srcUrl ?: return@LaunchedEffect
         var lastPos = 0L
         var busy = false
         while (true) {
             delay(200)
+            if (isEmbed) continue
             val p = main.currentPosition
             pos = p
             if (abs(p - lastPos) > 3000) played.clear()   // user seeked
@@ -111,19 +136,21 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
 
             if (AppSettings.dubEnabled && !busy) {
                 val seg = (p / DubEngine.SEG_MS).toInt()
+                // Translate the current minute and the next one, so the next minute is ready in time.
                 val target = listOf(seg, seg + 1).firstOrNull { it !in doneSegs }
                 if (target != null) {
                     busy = true
                     doneSegs.add(target)
                     launch {
                         try {
-                            status = "جاري ترجمة المقطع ${target + 1}…"
+                            status = "جاري ترجمة الدقيقة ${target + 1}…"
                             val cues = DubEngine.segment(ctx, url, target)
                             dubQueue.addAll(cues)
                             if (srtLines.isEmpty()) aiLines.addAll(cues.map { Line(it.startMs, it.endMs, it.text) })
+                            status = "المصدر ${idx + 1} من ${items.size}: ${items[idx].sourceName}"
                         } catch (e: Exception) {
-                            status = "تعذّرت ترجمة المقطع ${target + 1}: ${Net.describe(e)}"
-                            // A failed segment is skipped; the video keeps playing with its original audio.
+                            status = "تعذّرت ترجمة الدقيقة ${target + 1}: ${Net.describe(e)}"
+                            // A failed minute is skipped; the video keeps playing with its original audio.
                         } finally {
                             busy = false
                         }
@@ -148,11 +175,46 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().background(Color(0xFF0D0E13))) {
         TopBar(title.title, onBack)
         Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-            AndroidView(
-                factory = { c -> PlayerView(c).also { it.player = main; it.useController = true } },
-                modifier = Modifier.fillMaxSize()
-            )
-            if (currentLine.isNotEmpty()) {
+            if (isEmbed && srcUrl != null) {
+                AndroidView(
+                    factory = { c ->
+                        WebView(c).apply {
+                            setBackgroundColor(AndroidColor.BLACK)
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.mediaPlaybackRequiresUserGesture = false
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            val host = Uri.parse(srcUrl).host
+                            webViewClient = object : WebViewClient() {
+                                // Keep the player on its own site: no redirects to other pages.
+                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                                    request.url.host != host
+                                override fun onReceivedError(
+                                    view: WebView, request: WebResourceRequest, error: WebResourceError
+                                ) {
+                                    if (request.isForMainFrame) idx += 1
+                                }
+                            }
+                            webChromeClient = WebChromeClient()   // blocks popup windows
+                            webView = this
+                        }
+                    },
+                    update = { wv ->
+                        if (wv.tag != srcUrl) {
+                            wv.tag = srcUrl
+                            wv.loadUrl(srcUrl!!)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                AndroidView(
+                    factory = { c -> PlayerView(c).also { it.player = main; it.useController = true } },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            if (!isEmbed && currentLine.isNotEmpty()) {
                 Text(
                     currentLine, color = Color.White, fontSize = 16.sp, textAlign = TextAlign.Center,
                     modifier = Modifier.align(Alignment.BottomCenter)
@@ -164,9 +226,14 @@ fun PlayerScreen(title: Title, items: List<Playable>, onBack: () -> Unit) {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Text(
-            if (AppSettings.dubEnabled) "$status  •  الدبلجة مفعّلة" else "$status  •  الدبلجة متوقفة",
-            color = Color(0xFF9AA0B4), fontSize = 14.sp, modifier = Modifier.padding(16.dp)
-        )
+        val dubNote = when {
+            isEmbed -> "الدبلجة غير متاحة لهذا المصدر"
+            AppSettings.dubEnabled -> "الدبلجة مفعّلة"
+            else -> "الدبلجة متوقفة"
+        }
+        Text("$status  •  $dubNote", color = Color(0xFF9AA0B4), fontSize = 14.sp, modifier = Modifier.padding(16.dp))
+        if (items.size > 1 && idx < items.size - 1) {
+            GradientButton("المصدر التالي", enabled = true) { idx += 1 }
+        }
     }
 }

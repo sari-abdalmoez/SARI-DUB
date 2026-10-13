@@ -27,12 +27,7 @@ object Gemini {
             .put("generationConfig", gen)
             .toString()
 
-        var (code, resp) = Net.post(endpoint(), body, mapOf("x-goog-api-key" to Config.GEMINI_KEY))
-        if (code == 401 || code == 403) {
-            val retry = Net.post(endpoint(), body, mapOf("Authorization" to "Bearer ${Config.GEMINI_KEY}"))
-            code = retry.first
-            resp = retry.second
-        }
+        val (code, resp) = Net.post(endpoint(), body, mapOf("x-goog-api-key" to Config.GEMINI_KEY))
         if (code !in 200..299) throw ApiException(Net.kindFor(code), "Gemini HTTP $code: ${resp.take(160)}", code)
 
         JSONObject(resp).getJSONArray("candidates").getJSONObject(0)

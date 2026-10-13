@@ -189,7 +189,7 @@ fun DetailsScreen(
                     Spacer(Modifier.height(12.dp))
                     InfoBlock(
                         "مفتاح Gemini",
-                        if (Config.hasGemini) "مضبوط من local.properties (لا تظهر قيمته في التطبيق)."
+                        if (Config.hasGemini) "مفتاح Gemini مضبوط (لا تظهر قيمته في التطبيق)."
                         else "غير مضبوط. أضف GEMINI_KEY في local.properties ثم أعد البناء."
                     )
                 }

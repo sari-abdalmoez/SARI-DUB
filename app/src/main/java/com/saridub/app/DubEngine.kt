@@ -98,7 +98,7 @@ fun prosodyFor(emotion: String): Triple<String, String, String?> = when (emotion
  * Results are cached in memory so each segment is only processed once.
  */
 object DubEngine {
-    const val SEG_MS = 30_000L
+    const val SEG_MS = 60_000L
     private val cache = ConcurrentHashMap<String, List<DubCue>>()
 
     suspend fun segment(ctx: Context, src: String, index: Int): List<DubCue> = withContext(Dispatchers.IO) {
