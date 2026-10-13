@@ -35,9 +35,10 @@ object TmdbIds {
         if (parts.size == 3 && parts[0] == "tmdb") return@withContext parts[2].toIntOrNull()
         if (!Config.hasTmdb) return@withContext null
 
-        val url = "https://api.themoviedb.org/3/search/multi?api_key=${Config.TMDB_KEY}" +
-                "&include_adult=false&query=${Net.enc(t.title)}"
-        val arr = JSONObject(Net.get(url)).optJSONArray("results") ?: return@withContext null
+        val arr = JSONObject(TmdbApi.get("search/multi", mapOf(
+            "include_adult" to "false",
+            "query" to t.title
+        ))).optJSONArray("results") ?: return@withContext null
         val want = Text.normalize(t.title)
         val wantType = if (t.kind == "MOVIE") "movie" else "tv"
 

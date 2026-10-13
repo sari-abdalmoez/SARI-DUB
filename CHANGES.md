@@ -1,3 +1,10 @@
+## 2.3.1 — API authentication and diagnostics
+
+- TMDB supports both v3 API keys and Read Access Token Bearer authentication.
+- The Settings screen tests actual access to TMDB, Trakt, and the configured Gemini generation model.
+- Gemini model set to `gemini-3.5-flash-lite`; API errors include provider details where available.
+- CI fails early when a required repository secret is missing.
+
 # SARI DUB 2.3.0 — ما تغيّر وما لم يُختبر
 
 ## تم إصلاحه في الكود

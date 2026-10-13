@@ -126,7 +126,14 @@ object Net {
     }
 
     fun describe(e: Throwable): String = when (e) {
-        is ApiException -> describeKind(e.kind)
+        is ApiException -> {
+            val status = if (e.code in 400..599) " (HTTP ${e.code})" else ""
+            val detail = e.message
+                ?.takeIf { it.startsWith("Gemini HTTP ") && it.contains(": ") }
+                ?.substringAfter(": ")
+                ?.take(180)
+            describeKind(e.kind) + status + if (!detail.isNullOrBlank()) " — $detail" else ""
+        }
         is JSONException -> describeKind(ErrKind.MALFORMED)
         else -> e.message ?: "خطأ غير معروف"
     }

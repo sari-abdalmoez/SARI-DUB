@@ -24,7 +24,8 @@ object Config {
     val TRAKT_CLIENT_ID: String get() = runtimeValue("TRAKT_CLIENT_ID") ?: BuildConfig.TRAKT_CLIENT_ID.trim()
     val GEMINI_KEY: String get() = runtimeValue("GEMINI_KEY") ?: BuildConfig.GEMINI_KEY.trim()
 
-    const val GEMINI_MODEL = "gemini-2.5-flash-lite"
+    // Current low-latency, low-cost multimodal model for text, image and video input.
+    const val GEMINI_MODEL = "gemini-3.5-flash-lite"
 
     val hasTmdb: Boolean get() = TMDB_KEY.isNotBlank()
     val hasTrakt: Boolean get() = TRAKT_CLIENT_ID.isNotBlank()

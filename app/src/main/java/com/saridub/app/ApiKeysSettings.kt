@@ -39,7 +39,7 @@ fun ApiKeysSettings() {
         OutlinedTextField(
             value = tmdb, onValueChange = { tmdb = it }, singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("TMDB API Read Access Token") },
+            label = { Text("TMDB v3 API Key أو Read Access Token") },
             visualTransformation = PasswordVisualTransformation()
         )
         OutlinedTextField(
@@ -64,9 +64,17 @@ fun ApiKeysSettings() {
                 busy = false
             }
         }
-        GradientButton("حذف المفاتيح المحفوظة", enabled = !busy) {
-            Config.clearSavedApiKeys()
-            report = "تم حذف المفاتيح المحفوظة على هذا الجهاز."
+        Text(
+            "المفاتيح المحفوظة هنا لها أولوية على مفاتيح النسخة. اترك الحقول فارغة لاستخدام مفاتيح GitHub المضمنة في نسخة البناء.",
+            color = TextMid, fontSize = 12.sp
+        )
+        GradientButton("مسح المفاتيح المحفوظة وفحص مفاتيح النسخة", enabled = !busy) {
+            scope.launch {
+                busy = true
+                Config.clearSavedApiKeys()
+                report = withContext(Dispatchers.IO) { checkKeys() }
+                busy = false
+            }
         }
         if (report.isNotBlank()) {
             Text(report, color = TextMid, fontSize = 12.sp)
@@ -74,23 +82,60 @@ fun ApiKeysSettings() {
     }
 }
 
-/** Calls one public endpoint per service. Each call proves the key is accepted by that service. */
+/** Probes each actual service operation used by the app, without displaying any key value. */
 private fun checkKeys(): String {
     val lines = ArrayList<String>()
-    if (Config.hasTmdb) lines += "TMDB: " + runCatching {
-        Net.get("https://api.themoviedb.org/3/configuration?api_key=${Config.TMDB_KEY}")
+    lines += "TMDB: " + if (!Config.hasTmdb) {
+        "غير مضبوط"
+    } else runCatching {
+        TmdbApi.get("configuration")
         "يعمل"
     }.getOrElse { Net.describe(it) }
-    if (Config.hasTrakt) lines += "Trakt: " + runCatching {
-        Net.get("https://api.trakt.tv/movies/trending?limit=1",
+
+    lines += "Trakt: " + if (!Config.hasTrakt) {
+        "غير مضبوط"
+    } else runCatching {
+        Net.get(
+            "https://api.trakt.tv/movies/trending?limit=1",
             mapOf("Content-Type" to "application/json", "trakt-api-version" to "2",
-                "trakt-api-key" to Config.TRAKT_CLIENT_ID))
+                "trakt-api-key" to Config.TRAKT_CLIENT_ID)
+        )
         "يعمل"
     }.getOrElse { Net.describe(it) }
-    if (Config.hasGemini) lines += "Gemini: " + runCatching {
-        Net.get("https://generativelanguage.googleapis.com/v1beta/models",
-            mapOf("x-goog-api-key" to Config.GEMINI_KEY))
-        "يعمل"
-    }.getOrElse { Net.describe(it) }
-    return lines.ifEmpty { listOf("لا توجد مفاتيح لفحصها.") }.joinToString("\n")
+
+    lines += "Gemini: " + if (!Config.hasGemini) {
+        "غير مضبوط"
+    } else runCatching { checkGeminiModel() }.getOrElse { Net.describe(it) }
+
+    return lines.joinToString("\n")
+}
+
+/** A tiny generation request verifies both the API key and the exact model used by translation. */
+private fun checkGeminiModel(): String {
+    val body = org.json.JSONObject()
+        .put("contents", org.json.JSONArray().put(
+            org.json.JSONObject().put("parts",
+                org.json.JSONArray().put(org.json.JSONObject().put("text", "Reply with OK only."))
+            )
+        ))
+        .put("generationConfig", org.json.JSONObject().put("maxOutputTokens", 8))
+        .toString()
+
+    val (code, response) = Net.post(
+        "https://generativelanguage.googleapis.com/v1beta/models/${Config.GEMINI_MODEL}:generateContent",
+        body, mapOf("x-goog-api-key" to Config.GEMINI_KEY), timeout = 30000
+    )
+    if (code !in 200..299) {
+        val detail = runCatching {
+            org.json.JSONObject(response).optJSONObject("error")?.optString("message").orEmpty()
+        }.getOrDefault("")
+        val message = if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code"
+        throw ApiException(Net.kindFor(code), message, code)
+    }
+    val text = runCatching {
+        org.json.JSONObject(response).getJSONArray("candidates").getJSONObject(0)
+            .getJSONObject("content").getJSONArray("parts").getJSONObject(0).optString("text")
+    }.getOrDefault("")
+    if (text.isBlank()) throw ApiException(ErrKind.MALFORMED, "Gemini returned no text")
+    return "يعمل مع النموذج ${Config.GEMINI_MODEL}"
 }

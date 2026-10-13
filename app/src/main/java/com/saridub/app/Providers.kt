@@ -68,9 +68,13 @@ class TmdbProvider : TitleProvider {
     override suspend fun search(q: String): List<Title> = withContext(Dispatchers.IO) {
         val out = ArrayList<Title>()
         for (lang in listOf("en-US", "ar")) {
-            val url = "https://api.themoviedb.org/3/search/multi?api_key=${Config.TMDB_KEY}" +
-                    "&language=$lang&include_adult=false&query=${Net.enc(q)}"
-            val arr = JSONObject(Net.get(url)).optJSONArray("results") ?: continue
+            val arr = JSONObject(
+                TmdbApi.get("search/multi", mapOf(
+                    "language" to lang,
+                    "include_adult" to "false",
+                    "query" to q
+                ))
+            ).optJSONArray("results") ?: continue
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val type = o.optString("media_type")
@@ -121,7 +125,7 @@ class TraktProvider : TitleProvider {
 object Trending {
     suspend fun load(): List<Title> = withContext(Dispatchers.IO) {
         val tmdb = runCatching {
-            val arr = JSONObject(Net.get("https://api.themoviedb.org/3/trending/movie/week?api_key=${Config.TMDB_KEY}"))
+            val arr = JSONObject(TmdbApi.get("trending/movie/week", mapOf("language" to "en-US")))
                 .getJSONArray("results")
             (0 until arr.length()).map { tmdbToTitle(arr.getJSONObject(it), "movie") }
         }.getOrNull()

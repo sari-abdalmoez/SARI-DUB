@@ -190,7 +190,7 @@ fun DetailsScreen(
                     InfoBlock(
                         "مفتاح Gemini",
                         if (Config.hasGemini) "مفتاح Gemini مضبوط (لا تظهر قيمته في التطبيق)."
-                        else "غير مضبوط. أضف GEMINI_KEY في local.properties ثم أعد البناء."
+                        else "غير مضبوط. أضف GEMINI_KEY إلى GitHub Secrets وأعد بناء التطبيق، أو أدخل المفتاح في الإعدادات."
                     )
                 }
             }

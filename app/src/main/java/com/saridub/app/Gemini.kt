@@ -28,7 +28,13 @@ object Gemini {
             .toString()
 
         val (code, resp) = Net.post(endpoint(), body, mapOf("x-goog-api-key" to Config.GEMINI_KEY))
-        if (code !in 200..299) throw ApiException(Net.kindFor(code), "Gemini HTTP $code: ${resp.take(160)}", code)
+        if (code !in 200..299) {
+            val detail = runCatching {
+                JSONObject(resp).optJSONObject("error")?.optString("message").orEmpty()
+            }.getOrDefault("")
+            val message = if (detail.isNotBlank()) "Gemini HTTP $code: $detail" else "Gemini HTTP $code"
+            throw ApiException(Net.kindFor(code), message, code)
+        }
 
         JSONObject(resp).getJSONArray("candidates").getJSONObject(0)
             .getJSONObject("content").getJSONArray("parts").getJSONObject(0).getString("text")

@@ -44,11 +44,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          missing=0
           for key in TMDB_KEY TRAKT_CLIENT_ID GEMINI_KEY; do
             if [ -z "${!key:-}" ]; then
-              echo "::warning::GitHub Actions secret $key is missing. The APK can build, but the related feature will not authenticate. Add it in Settings > Secrets and variables > Actions. No secret value is printed."
+              echo "::error::Required GitHub Actions secret $key is missing. Add it in Settings > Secrets and variables > Actions. No secret value is printed."
+              missing=1
             fi
           done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "All required API secrets are present."
 
       - name: Create local.properties for this build
         shell: bash

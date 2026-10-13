@@ -5,7 +5,7 @@
 
 | الاسم | الاستخدام |
 |---|---|
-| `TMDB_KEY` | بيانات الأفلام والمسلسلات والمقترحات |
+| `TMDB_KEY` | مفتاح TMDB v3 أو Read Access Token (يدعمهما التطبيق) |
 | `TRAKT_CLIENT_ID` | بحث Trakt (يُرسل في الهيدر `trakt-api-key`) |
 | `GEMINI_KEY` | ترجمة المانجا والحوارات وملفات SRT |
 | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` | اختيارية: توقيع إصدار دائم |
@@ -20,7 +20,7 @@ TVMaze لا يحتاج مفتاحاً.
 بدون `KEYSTORE_FILE` يُوقَّع الإصدار بمفتاح debug، وهو قابل للتثبيت للتجربة. للتوزيع استخدم مفتاحاً ثابتاً، لأن تغيير مفتاح التوقيع يمنع التحديث فوق نسخة مثبتة سابقاً.
 
 ## CI
-`.github/workflows/android-release.yml` يكتب الأسرار إلى `local.properties` من متغيرات البيئة، يبني APK، ثم يتحقق منه بـ `apksigner` و`aapt`.
+`.github/workflows/build.yml` يكتب الأسرار إلى `local.properties` من متغيرات البيئة، يرفض البناء إذا غاب أي سر مطلوب، ثم يبني APK واحداً ويتحقق منه بـ `apksigner` و`aapt`.
 
 ## ما هو مُنفَّذ
 - الواجهة الفاتحة (الرئيسية) والداكنة (البحث والتفاصيل) بمكونات Compose أصلية.

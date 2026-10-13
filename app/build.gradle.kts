@@ -28,8 +28,8 @@ android {
         applicationId = "com.saridub.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
-        versionName = "2.3.0"
+        versionCode = 5
+        versionName = "2.3.1"
         buildConfigField("String", "TMDB_KEY", secret("TMDB_KEY"))
         buildConfigField("String", "TRAKT_CLIENT_ID", secret("TRAKT_CLIENT_ID"))
         buildConfigField("String", "GEMINI_KEY", secret("GEMINI_KEY"))
